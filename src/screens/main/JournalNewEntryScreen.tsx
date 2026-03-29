@@ -16,6 +16,19 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import type { JournalStackParamList } from '../../navigation/types';
 import { EveCalTheme } from '../../theme/theme';
+import { createJournalEntry } from '../../lib/supabase/journalEntriesApi';
+import {
+  FALLBACK_MOOD_OPTIONS_DETAILED,
+  fetchMoodOptionsByType,
+  type AppMoodOption,
+} from '../../lib/supabase/moodOptions';
+import {
+  FALLBACK_TAG_OPTIONS,
+  fetchActiveTagOptions,
+  type AppTagOption,
+} from '../../lib/supabase/tagOptions';
+import { isUuid } from '../../lib/uuid';
+import { useAuth } from '../../state/auth/AuthContext';
 import {
   appendJournalEntry,
   type JournalTimeOfDay,
@@ -33,26 +46,6 @@ const TIME_OPTIONS: {
   { id: 'evening', label: 'Evening', icon: 'moon' },
   { id: 'night', label: 'Night', icon: 'heart' },
 ];
-
-const MOOD_OPTIONS = [
-  { key: 'Calm', emoji: '🌿' },
-  { key: 'Grateful', emoji: '💛' },
-  { key: 'Reflective', emoji: '🌙' },
-  { key: 'Joyful', emoji: '✨' },
-  { key: 'Peaceful', emoji: '🕊️' },
-  { key: 'Energized', emoji: '⚡' },
-] as const;
-
-const TAG_OPTIONS = [
-  'Gratitude',
-  'Peace',
-  'Mindfulness',
-  'Growth',
-  'Family',
-  'Self-care',
-  'Joy',
-  'Reflection',
-] as const;
 
 const PLACEHOLDER =
   "What's on your mind and heart today? Take a moment to reflect…";
@@ -104,21 +97,93 @@ const kickerStyle = {
 
 export function JournalNewEntryScreen() {
   const navigation = useNavigation<Nav>();
+  const { user } = useAuth();
   const [timeOfDay, setTimeOfDay] = React.useState<JournalTimeOfDay>('morning');
-  const [moodKey, setMoodKey] = React.useState<string>('Calm');
-  const [reflection, setReflection] = React.useState('');
-  const [tags, setTags] = React.useState<Set<string>>(
-    () => new Set(['Gratitude']),
+  const [moodOptions, setMoodOptions] = React.useState<AppMoodOption[]>(
+    FALLBACK_MOOD_OPTIONS_DETAILED,
   );
+  const [selectedMoodId, setSelectedMoodId] = React.useState<string>(
+    FALLBACK_MOOD_OPTIONS_DETAILED[0]!.id,
+  );
+  const [tagOptions, setTagOptions] =
+    React.useState<AppTagOption[]>(FALLBACK_TAG_OPTIONS);
+  const [selectedTagIds, setSelectedTagIds] = React.useState<Set<string>>(
+    () => new Set(),
+  );
+  const [reflection, setReflection] = React.useState('');
   const [saving, setSaving] = React.useState(false);
 
-  const toggleTag = (t: string) => {
-    setTags(prev => {
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { options, error } = await fetchMoodOptionsByType('detailed');
+      if (cancelled) {
+        return;
+      }
+      if (__DEV__ && error) {
+        // eslint-disable-next-line no-console
+        console.log(
+          '[journal] mood_options detailed fetch failed, using fallback',
+          error,
+        );
+      }
+      if (options.length === 0) {
+        return;
+      }
+      setMoodOptions(options);
+      setSelectedMoodId(prev =>
+        options.some(o => o.id === prev) ? prev : options[0]!.id,
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!user) {
+      setTagOptions(FALLBACK_TAG_OPTIONS);
+      setSelectedTagIds(new Set());
+      return () => {
+        cancelled = true;
+      };
+    }
+    void (async () => {
+      const { options, error } = await fetchActiveTagOptions();
+      if (cancelled) {
+        return;
+      }
+      if (__DEV__ && error) {
+        // eslint-disable-next-line no-console
+        console.log('[journal] tag_options fetch failed, using fallback', error);
+      }
+      if (options.length === 0) {
+        return;
+      }
+      setTagOptions(options);
+      setSelectedTagIds(prev => {
+        const next = new Set<string>();
+        for (const id of prev) {
+          if (options.some(o => o.id === id)) {
+            next.add(id);
+          }
+        }
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const toggleTag = (tagId: string) => {
+    setSelectedTagIds(prev => {
       const next = new Set(prev);
-      if (next.has(t)) {
-        next.delete(t);
+      if (next.has(tagId)) {
+        next.delete(tagId);
       } else {
-        next.add(t);
+        next.add(tagId);
       }
       return next;
     });
@@ -136,21 +201,57 @@ export function JournalNewEntryScreen() {
     }
     setSaving(true);
     try {
-      const mood = MOOD_OPTIONS.find(m => m.key === moodKey) ?? MOOD_OPTIONS[0];
-      await appendJournalEntry({
-        timeOfDay,
-        mood: mood.key,
-        moodEmoji: mood.emoji,
-        reflection: trimmed,
-        tags: Array.from(tags),
-      });
+      const mood =
+        moodOptions.find(m => m.id === selectedMoodId) ?? moodOptions[0]!;
+
+      if (user) {
+        if (!isUuid(mood.id)) {
+          Alert.alert(
+            'Cannot save',
+            'Moods could not be loaded from the server. Check your connection and try again.',
+          );
+          return;
+        }
+        const tagIds = Array.from(selectedTagIds).filter(isUuid);
+        const result = await createJournalEntry({
+          moodId: mood.id,
+          timeOfDay,
+          note: trimmed,
+          tagIds,
+        });
+        if (!result.ok) {
+          Alert.alert('Could not save', result.message);
+          return;
+        }
+      } else {
+        const tagLabels = tagOptions
+          .filter(t => selectedTagIds.has(t.id))
+          .map(t => t.label);
+        await appendJournalEntry({
+          timeOfDay,
+          mood: mood.label,
+          moodEmoji: mood.emoji,
+          reflection: trimmed,
+          tags: tagLabels,
+        });
+      }
       navigation.goBack();
     } catch {
       Alert.alert('Could not save', 'Please try again.');
     } finally {
       setSaving(false);
     }
-  }, [moodKey, navigation, reflection, saving, tags, timeOfDay]);
+  }, [
+    moodOptions,
+    navigation,
+    reflection,
+    saving,
+    selectedMoodId,
+    selectedTagIds,
+    tagOptions,
+    timeOfDay,
+    user,
+  ]);
 
   return (
     <View style={styles.root}>
@@ -212,12 +313,12 @@ export function JournalNewEntryScreen() {
               HOW ARE YOU FEELING?
             </Text>
             <View style={styles.moodWrap}>
-              {MOOD_OPTIONS.map(m => {
-                const selected = moodKey === m.key;
+              {moodOptions.map(m => {
+                const selected = selectedMoodId === m.id;
                 return (
                   <Pressable
-                    key={m.key}
-                    onPress={() => setMoodKey(m.key)}
+                    key={m.id}
+                    onPress={() => setSelectedMoodId(m.id)}
                     style={({ pressed }) => [
                       styles.moodPill,
                       selected && styles.moodPillSelected,
@@ -231,7 +332,7 @@ export function JournalNewEntryScreen() {
                         styles.moodLabel,
                         selected && styles.moodLabelSelected,
                       ]}>
-                      {m.key}
+                      {m.label}
                     </Text>
                   </Pressable>
                 );
@@ -261,12 +362,12 @@ export function JournalNewEntryScreen() {
               ADD TAGS (OPTIONAL)
             </Text>
             <View style={styles.tagWrap}>
-              {TAG_OPTIONS.map(t => {
-                const selected = tags.has(t);
+              {tagOptions.map(t => {
+                const selected = selectedTagIds.has(t.id);
                 return (
                   <Pressable
-                    key={t}
-                    onPress={() => toggleTag(t)}
+                    key={t.id}
+                    onPress={() => toggleTag(t.id)}
                     style={({ pressed }) => [
                       styles.tagPill,
                       selected && styles.tagPillSelected,
@@ -279,7 +380,7 @@ export function JournalNewEntryScreen() {
                         styles.tagLabel,
                         selected && styles.tagLabelSelected,
                       ]}>
-                      {t}
+                      {t.label}
                     </Text>
                   </Pressable>
                 );

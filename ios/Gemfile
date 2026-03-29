@@ -1,0 +1,7 @@
+source 'https://rubygems.org'
+
+# Match repo was created with fastlane ~2.232 (see evencal-match/match_version.txt) and uses
+# encryption v2; older fastlane cannot decrypt it. Use Homebrew Ruby: brew install ruby
+ruby '>= 2.7.0'
+
+gem 'fastlane', '~> 2.232'

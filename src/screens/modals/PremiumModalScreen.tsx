@@ -12,8 +12,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { PremiumSparkleIcon } from '../../components/premium/PremiumSparkleIcon';
-import { useAuth } from '../../state/auth/AuthContext';
+import { isPremiumUser } from '../../lib/premium';
 import type { RootStackParamList } from '../../navigation/types';
+import { useAuth } from '../../state/auth/AuthContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Premium'>;
 
@@ -130,23 +131,37 @@ function FeatureRow({ label, isLast }: { label: string; isLast?: boolean }) {
 }
 
 export function PremiumModalScreen({ navigation }: Props) {
-  const { markPremiumSeen } = useAuth();
+  const { markPremiumSeen, signOut, user, userData } = useAuth();
   const [plan, setPlan] = React.useState<'monthly' | 'yearly'>('yearly');
 
-  const dismiss = React.useCallback(async () => {
+  const dismissAllowEntry = React.useCallback(async () => {
     await markPremiumSeen();
     navigation.goBack();
   }, [markPremiumSeen, navigation]);
 
+  const handleClose = React.useCallback(async () => {
+    const strictNonPremiumPaywall =
+      user != null && !isPremiumUser(userData);
+    if (strictNonPremiumPaywall) {
+      await signOut();
+      return;
+    }
+    await dismissAllowEntry();
+  }, [dismissAllowEntry, signOut, user, userData]);
+
+  const handleStartTrial = React.useCallback(async () => {
+    await dismissAllowEntry();
+  }, [dismissAllowEntry]);
+
   return (
     <View style={styles.backdrop}>
-      <Pressable style={StyleSheet.absoluteFillObject} onPress={dismiss} />
+      <Pressable style={StyleSheet.absoluteFillObject} onPress={handleClose} />
       <SafeAreaView style={styles.sheetSafe} edges={['top', 'bottom']}>
         <View style={styles.sheet}>
           <View style={styles.headerRow}>
             <Text style={styles.headerBrand}>Eve&Cal Premium</Text>
             <Pressable
-              onPress={dismiss}
+              onPress={handleClose}
               hitSlop={14}
               style={styles.headerClose}
               accessibilityRole="button"
@@ -198,7 +213,7 @@ export function PremiumModalScreen({ navigation }: Props) {
             </View>
 
             <Pressable
-              onPress={dismiss}
+              onPress={handleStartTrial}
               style={({ pressed }) => [
                 styles.ctaBtn,
                 pressed && styles.ctaBtnPressed,

@@ -6,6 +6,7 @@ import { MainWithPremiumGate } from './MainWithPremiumGate';
 import { PremiumModalScreen } from '../screens/modals/PremiumModalScreen';
 import { SettingsStackNavigator } from './SettingsStackNavigator';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
+import { isPremiumUser } from '../lib/premium';
 import { useAuth } from '../state/auth/AuthContext';
 
 const Root = createNativeStackNavigator<RootStackParamList>();
@@ -55,7 +56,13 @@ export function RootNavigator() {
 }
 
 export function useShouldShowPremiumModal() {
-  const { isAuthed, premiumSeen } = useAuth();
-  return isAuthed && !premiumSeen;
+  const { isAuthed, premiumSeen, user, userData } = useAuth();
+  if (!isAuthed) {
+    return false;
+  }
+  if (user != null && isPremiumUser(userData)) {
+    return false;
+  }
+  return !premiumSeen;
 }
 

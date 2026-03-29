@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { JournalStackParamList } from '../../navigation/types';
@@ -14,6 +14,8 @@ import {
   isJournalSlotComplete,
   periodLabelFromStorageKey,
 } from '../../state/journal/journalMoodCheckin';
+import { fetchUserJournalEntries } from '../../lib/supabase/journalEntriesApi';
+import { useAuth } from '../../state/auth/AuthContext';
 import {
   formatJournalEntryDayLabel,
   getJournalEntries,
@@ -72,10 +74,12 @@ function ReflectionRow({
 export function JournalScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<JournalStackParamList, 'JournalMain'>>();
+  const { user } = useAuth();
   const [slotKey, setSlotKey] = React.useState<string | null>(null);
   const [slotComplete, setSlotComplete] = React.useState(false);
   const [showContent, setShowContent] = React.useState(false);
   const [entries, setEntries] = React.useState<JournalEntry[]>([]);
+  const [entriesLoading, setEntriesLoading] = React.useState(false);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -83,7 +87,28 @@ export function JournalScreen() {
       (async () => {
         const slot = getCurrentJournalSlot();
         const done = await isJournalSlotComplete(slot.storageKey);
-        const list = await getJournalEntries();
+        let list: JournalEntry[];
+        if (user) {
+          if (active) {
+            setEntriesLoading(true);
+          }
+          try {
+            const { entries: remote, error } = await fetchUserJournalEntries();
+            if (!active) {
+              return;
+            }
+            list = error ? await getJournalEntries() : remote;
+          } finally {
+            if (active) {
+              setEntriesLoading(false);
+            }
+          }
+        } else {
+          if (active) {
+            setEntriesLoading(false);
+          }
+          list = await getJournalEntries();
+        }
         if (!active) return;
         setEntries(list);
         setSlotKey(slot.storageKey);
@@ -97,7 +122,7 @@ export function JournalScreen() {
       return () => {
         active = false;
       };
-    }, [navigation]),
+    }, [navigation, user]),
   );
 
   if (!showContent) {
@@ -162,11 +187,16 @@ export function JournalScreen() {
           onPress={() => navigation.navigate('JournalNewEntry')}
         />
 
-        <Text style={styles.section}>RECENT REFLECTIONS</Text>
-
-        {entries.length === 0 ? (
+        <Text style={styles.sectionRecent}>RECENT REFLECTIONS</Text>
+        {entriesLoading ? (
+          <View style={styles.entriesLoaderWrap}>
+            <ActivityIndicator color="rgba(58,45,42,0.38)" />
+          </View>
+        ) : entries.length === 0 ? (
           <Text style={styles.entriesEmpty}>
-            Saved reflections will show up here after you create an entry.
+            {user
+              ? 'Your saved reflections from the cloud will appear here. Use the button above to write one.'
+              : 'Saved reflections will show up here after you create an entry.'}
           </Text>
         ) : (
           entries.map((e, index) => (
@@ -329,11 +359,16 @@ const styles = StyleSheet.create({
     color: EveCalTheme.colors.textMuted,
     fontSize: 16,
   },
-  section: {
+  sectionRecent: {
     color: 'rgba(58,45,42,0.32)',
     letterSpacing: 2.2,
     fontSize: 11,
     marginTop: 6,
+  },
+  entriesLoaderWrap: {
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   entriesEmpty: {
     color: EveCalTheme.colors.textMuted,

@@ -1,0 +1,8 @@
+# Apple ID: set FASTLANE_USER in fastlane/.env (fastlane loads .env automatically).
+apple_id(ENV.fetch('FASTLANE_USER', ''))
+
+# Apple Developer team (Membership).
+team_id('Y2H26URNHR')
+
+# App Store Connect provider / team id (UUID from Apple; used by pilot/deliver etc.).
+itc_team_id('69a6de94-3876-47e3-e053-5b8c7c11a4d1')

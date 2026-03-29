@@ -1,0 +1,58 @@
+# frozen_string_literal: true
+
+# Match repo (evencal-match) uses encryption v2 — use fastlane >= 2.232 (see ios/Gemfile).
+# Run from ios/:  export PATH="/opt/homebrew/opt/ruby/bin:$PATH" && bundle install && bundle exec fastlane sync_certificates
+# If you see "AEAD authentication tag verification failed", MATCH_PASSWORD does not match the repo passphrase.
+
+default_platform(:ios)
+
+platform :ios do
+  desc 'Install certs + profiles from the match repo (read-only). Requires correct MATCH_PASSWORD (and usually FASTLANE_USER for Apple API).'
+  lane :sync_certificates do
+    match(type: 'development', readonly: true, app_identifier: 'com.evencal.app')
+    match(type: 'appstore', readonly: true, app_identifier: 'com.evencal.app')
+  end
+
+  desc 'Like sync_certificates but prompts for the match passphrase in the terminal (ignores MATCH_PASSWORD from .env). Use if AEAD fails to double-check the real passphrase.'
+  lane :sync_certificates_prompt do
+    ENV.delete('MATCH_PASSWORD')
+    match(type: 'development', readonly: true, app_identifier: 'com.evencal.app')
+    match(type: 'appstore', readonly: true, app_identifier: 'com.evencal.app')
+  end
+
+  desc 'Set Xcode manual signing for eve_call: Development + App Store profiles from match.'
+  desc 'Requires FASTLANE_TEAM_ID (10-character Team ID from developer.apple.com → Membership).'
+  lane :apply_xcode_signing do
+    team = ENV['FASTLANE_TEAM_ID'].to_s.strip
+    UI.user_error!('Set FASTLANE_TEAM_ID in fastlane/.env or your shell') if team.empty?
+
+    project = 'eve_call.xcodeproj'
+    target_name = 'eve_call'
+
+    update_code_signing_settings(
+      path: project,
+      targets: [target_name],
+      build_configurations: ['Debug'],
+      use_automatic_signing: false,
+      team_id: team,
+      profile_name: 'match Development com.evencal.app',
+      code_sign_identity: 'Apple Development'
+    )
+
+    update_code_signing_settings(
+      path: project,
+      targets: [target_name],
+      build_configurations: ['Release'],
+      use_automatic_signing: false,
+      team_id: team,
+      profile_name: 'match AppStore com.evencal.app',
+      code_sign_identity: 'Apple Distribution'
+    )
+  end
+
+  desc 'sync_certificates then apply_xcode_signing (typical first-time Mac setup).'
+  lane :setup_signing do
+    sync_certificates
+    apply_xcode_signing
+  end
+end

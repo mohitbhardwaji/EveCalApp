@@ -1,20 +1,24 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import type { AppMoodOption } from '../lib/supabase/moodOptions';
 import { EveCalTheme } from '../theme/theme';
 import { formatJournalCheckinTimestamp } from '../state/journal/journalMoodCheckin';
 
-const MOODS_LEFT = ['Grateful', 'Restless', 'Inspired', 'Balanced'] as const;
-const MOODS_RIGHT = ['Focused', 'Serene', 'Overwhelmed', 'Reflective'] as const;
-
 type Props = {
-  onAnchored: (mood: string) => void;
+  options: AppMoodOption[];
+  /** Receives `key` for the chosen mood (stored locally + synced). */
+  onAnchored: (moodKey: string) => void;
 };
 
 /** Core mood UI — use inside a card or full-screen shell. */
-export function JournalMoodCheckInContent({ onAnchored }: Props) {
+export function JournalMoodCheckInContent({ options, onAnchored }: Props) {
   const [now] = React.useState(() => new Date());
-  const [selected, setSelected] = React.useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = React.useState<string | null>(null);
+
+  const mid = Math.ceil(options.length / 2);
+  const left = options.slice(0, mid);
+  const right = options.slice(mid);
 
   return (
     <View>
@@ -23,34 +27,34 @@ export function JournalMoodCheckInContent({ onAnchored }: Props) {
 
       <View style={styles.grid}>
         <View style={styles.col}>
-          {MOODS_LEFT.map(m => (
+          {left.map(m => (
             <MoodPill
-              key={m}
-              label={m}
-              selected={selected === m}
-              onPress={() => setSelected(m)}
+              key={m.id}
+              option={m}
+              selected={selectedKey === m.key}
+              onPress={() => setSelectedKey(m.key)}
             />
           ))}
         </View>
         <View style={styles.col}>
-          {MOODS_RIGHT.map(m => (
+          {right.map(m => (
             <MoodPill
-              key={m}
-              label={m}
-              selected={selected === m}
-              onPress={() => setSelected(m)}
+              key={m.id}
+              option={m}
+              selected={selectedKey === m.key}
+              onPress={() => setSelectedKey(m.key)}
             />
           ))}
         </View>
       </View>
 
       <Pressable
-        onPress={() => selected && onAnchored(selected)}
-        disabled={!selected}
+        onPress={() => selectedKey && onAnchored(selectedKey)}
+        disabled={!selectedKey}
         style={({ pressed }) => [
           styles.ctaWrap,
-          !selected && styles.ctaDisabled,
-          pressed && selected && styles.ctaPressed,
+          !selectedKey && styles.ctaDisabled,
+          pressed && selectedKey && styles.ctaPressed,
         ]}>
         <LinearGradient
           colors={['#8FAF90', '#7E9DB5']}
@@ -74,11 +78,11 @@ export function JournalMoodCheckIn(props: Props) {
 }
 
 function MoodPill({
-  label,
+  option,
   selected,
   onPress,
 }: {
-  label: string;
+  option: AppMoodOption;
   selected: boolean;
   onPress: () => void;
 }) {
@@ -93,7 +97,8 @@ function MoodPill({
       accessibilityRole="radio"
       accessibilityState={{ selected }}>
       <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
-        {label}
+        {option.emoji ? `${option.emoji} ` : ''}
+        {option.label}
       </Text>
     </Pressable>
   );

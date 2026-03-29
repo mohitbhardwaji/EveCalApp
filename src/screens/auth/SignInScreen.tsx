@@ -1,5 +1,7 @@
 import React from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -24,7 +26,37 @@ const FONT_SERIF = Platform.select({
 });
 
 export function SignInScreen() {
-  const { signIn } = useAuth();
+  const {
+    signInWithGoogle,
+    signInWithApple,
+    continueAsGuest,
+    authError,
+    clearAuthError,
+  } = useAuth();
+  const [busy, setBusy] = React.useState<'google' | 'apple' | null>(null);
+
+  React.useEffect(() => {
+    if (authError) {
+      Alert.alert('Sign-in', authError, [
+        { text: 'OK', onPress: () => clearAuthError() },
+      ]);
+    }
+  }, [authError, clearAuthError]);
+
+  const runOAuth = async (
+    kind: 'google' | 'apple',
+    fn: () => Promise<string | null>,
+  ) => {
+    setBusy(kind);
+    try {
+      const message = await fn();
+      if (message) {
+        Alert.alert('Sign-in', message);
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -58,22 +90,34 @@ export function SignInScreen() {
           </Text>
 
           <Pressable
-            onPress={signIn}
+            disabled={busy != null}
+            onPress={() => void runOAuth('google', signInWithGoogle)}
             style={({ pressed }) => [
               styles.googleBtn,
               pressed && styles.btnPressed,
+              busy != null && styles.btnDisabled,
             ]}>
-            <GoogleGIcon size={22} />
+            {busy === 'google' ? (
+              <ActivityIndicator color="#4A4A4A" />
+            ) : (
+              <GoogleGIcon size={22} />
+            )}
             <Text style={styles.googleBtnText}>Continue with Google</Text>
           </Pressable>
 
           <Pressable
-            onPress={signIn}
+            disabled={busy != null}
+            onPress={() => void runOAuth('apple', signInWithApple)}
             style={({ pressed }) => [
               styles.appleBtn,
               pressed && styles.btnPressed,
+              busy != null && styles.btnDisabled,
             ]}>
-            <AppleMarkIcon size={22} color="#FFFFFF" />
+            {busy === 'apple' ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <AppleMarkIcon size={22} color="#FFFFFF" />
+            )}
             <Text style={styles.appleBtnText}>Continue with Apple</Text>
           </Pressable>
 
@@ -82,7 +126,10 @@ export function SignInScreen() {
             {" We're here to support you, not collect unnecessary data."}
           </Text>
 
-          <Pressable onPress={signIn} style={styles.skip}>
+          <Pressable
+            disabled={busy != null}
+            onPress={() => void continueAsGuest()}
+            style={styles.skip}>
             <Text style={styles.skipText}>Continue without signing in</Text>
           </Pressable>
         </View>
@@ -198,6 +245,9 @@ const styles = StyleSheet.create({
   btnPressed: {
     opacity: 0.92,
     transform: [{ scale: 0.99 }],
+  },
+  btnDisabled: {
+    opacity: 0.65,
   },
   googleBtnText: {
     fontSize: 16,

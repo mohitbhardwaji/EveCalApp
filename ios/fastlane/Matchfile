@@ -1,0 +1,14 @@
+# Match repo (encrypted certs + profiles). Override with MATCH_GIT_URL if needed.
+# Default: team remote. For a local clone use file://… (encode `&` as %26 in paths).
+git_url(ENV.fetch('MATCH_GIT_URL', 'git@github.com:akshaynhegde/evencal-match.git'))
+
+# Faster clones (less git history). If match ever errors on shallow clone, set to false.
+shallow_clone(true)
+clone_branch_directly(true)
+
+storage_mode('git')
+
+app_identifier(['com.evencal.app'])
+
+# Default type when running `fastlane match` without a type; lanes pass explicit types.
+type('development')
