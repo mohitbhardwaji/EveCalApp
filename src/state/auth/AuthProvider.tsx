@@ -30,21 +30,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     (async () => {
       try {
-        const [authedRaw, premiumSeenRaw, authModeRaw, sessionResult] =
-          await Promise.all([
-            AsyncStorage.getItem(StorageKeys.authed),
-            AsyncStorage.getItem(StorageKeys.premiumSeen),
-            AsyncStorage.getItem(StorageKeys.authMode),
-            supabase.auth.getSession(),
-          ]);
+        const [authedRaw, premiumSeenRaw, authModeRaw] = await Promise.all([
+          AsyncStorage.getItem(StorageKeys.authed),
+          AsyncStorage.getItem(StorageKeys.premiumSeen),
+          AsyncStorage.getItem(StorageKeys.authMode),
+        ]);
         if (!mounted) return;
 
-        const session = sessionResult.data.session;
-        if (__DEV__) {
-          const accessToken = session?.access_token;
+        const { error } = await supabase.auth.getSession();
+        if (__DEV__ && error) {
           // eslint-disable-next-line no-console
-          console.log('access token >>>', accessToken);
+          console.log('[supabase] getSession (hydrate)', error.message);
         }
+        await supabase.auth.refreshSession();
+        const freshSession = (await supabase.auth.getSession()).data.session;
+        if (__DEV__ && freshSession) {
+          // eslint-disable-next-line no-console
+          console.log(freshSession.access_token);
+        }
+        const session = freshSession;
         const premiumSeen = premiumSeenRaw === '1';
 
         let isAuthed = false;

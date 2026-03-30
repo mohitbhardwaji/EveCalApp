@@ -1,5 +1,6 @@
 import { getSupabase } from './client';
 import type { Database } from './database.types';
+import type { AppMoodOption } from './moodOptions';
 
 export type AppTagOption = {
   id: string;
@@ -7,6 +8,18 @@ export type AppTagOption = {
 };
 
 type TagOptionRow = Database['public']['Tables']['tag_options']['Row'];
+
+/** Shapes `tag_options` for the journal anchor pill grid (`moods.mood` stores tag `id`). */
+export function mapTagOptionsToAnchorMoodOptions(
+  tags: AppTagOption[],
+): AppMoodOption[] {
+  return tags.map(t => ({
+    id: t.id,
+    key: t.id,
+    label: t.label,
+    emoji: '',
+  }));
+}
 
 export const FALLBACK_TAG_OPTIONS: AppTagOption[] = [
   'Gratitude',

@@ -1,5 +1,12 @@
 import React from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Animated,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { JournalStackParamList } from '../../navigation/types';
@@ -14,6 +21,7 @@ import {
   isJournalSlotComplete,
   periodLabelFromStorageKey,
 } from '../../state/journal/journalMoodCheckin';
+import { fetchAnchorMoodForSlotFromApi } from '../../lib/supabase/moods';
 import { fetchUserJournalEntries } from '../../lib/supabase/journalEntriesApi';
 import { useAuth } from '../../state/auth/AuthContext';
 import {
@@ -23,6 +31,82 @@ import {
   journalTimeIconName,
   type JournalEntry,
 } from '../../state/journal/journalEntries';
+
+const TAG_ROW_GAP = 10;
+
+/** Slow looping RTL ticker when tags overflow or there are more than four tags. */
+function ReflectionTagsRow({ tags }: { tags: string[] }) {
+  const translateX = React.useRef(new Animated.Value(0)).current;
+  const [segmentW, setSegmentW] = React.useState(0);
+  const [containerW, setContainerW] = React.useState(0);
+
+  const doesNotFit =
+    containerW > 0 && segmentW > 0 && segmentW > containerW + 1;
+  const shouldMarquee = tags.length > 4 || doesNotFit;
+  const stride = segmentW > 0 ? segmentW + TAG_ROW_GAP : 0;
+
+  const tagsKey = tags.join('\u0001');
+
+  React.useEffect(() => {
+    if (!shouldMarquee || stride <= 0) {
+      translateX.setValue(0);
+      return;
+    }
+    translateX.setValue(0);
+    const duration = Math.min(140_000, Math.max(55_000, stride * 90));
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(translateX, {
+          toValue: -stride,
+          duration,
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateX, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [shouldMarquee, stride, tagsKey, translateX]);
+
+  const renderPills = (suffix: string) =>
+    tags.map((t, i) => (
+      <View key={`${t}-${i}-${suffix}`} style={styles.pill}>
+        <Text style={styles.pillText}>{t}</Text>
+      </View>
+    ));
+
+  return (
+    <View
+      style={styles.tagRowClip}
+      onLayout={e => setContainerW(e.nativeEvent.layout.width)}>
+      {shouldMarquee ? (
+        <Animated.View
+          style={[
+            styles.tagMarqueeTrack,
+            { transform: [{ translateX }] },
+          ]}>
+          <View
+            style={styles.tagMarqueeSegment}
+            onLayout={e => setSegmentW(e.nativeEvent.layout.width)}>
+            {renderPills('a')}
+          </View>
+          <View style={{ width: TAG_ROW_GAP }} />
+          <View style={styles.tagMarqueeSegment}>{renderPills('b')}</View>
+        </Animated.View>
+      ) : (
+        <View
+          style={styles.pillsRow}
+          onLayout={e => setSegmentW(e.nativeEvent.layout.width)}>
+          {renderPills('s')}
+        </View>
+      )}
+    </View>
+  );
+}
 
 function ReflectionRow({
   dayLabel,
@@ -58,15 +142,7 @@ function ReflectionRow({
         </View>
       </View>
       <Text style={styles.reflectionText}>“{text}”</Text>
-      {tags.length > 0 ? (
-        <View style={styles.pillsRow}>
-          {tags.map(t => (
-            <View key={t} style={styles.pill}>
-              <Text style={styles.pillText}>{t}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
+      {tags.length > 0 ? <ReflectionTagsRow tags={tags} /> : null}
     </Surface>
   );
 }
@@ -80,13 +156,34 @@ export function JournalScreen() {
   const [showContent, setShowContent] = React.useState(false);
   const [entries, setEntries] = React.useState<JournalEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = React.useState(false);
+  const [anchoredMoodDisplay, setAnchoredMoodDisplay] = React.useState<
+    string | null
+  >(null);
 
   useFocusEffect(
     React.useCallback(() => {
       let active = true;
       (async () => {
         const slot = getCurrentJournalSlot();
-        const done = await isJournalSlotComplete(slot.storageKey);
+        let apiMood: string | null = null;
+        let anchorFetchFailed = false;
+        if (user) {
+          const r = await fetchAnchorMoodForSlotFromApi(slot.storageKey);
+          apiMood = r.label;
+          anchorFetchFailed = r.fetchFailed;
+        }
+        const localComplete = await isJournalSlotComplete(slot.storageKey);
+        const localMood = await getJournalMoodForSlot(slot.storageKey);
+
+        let displayMood: string | null;
+        if (user) {
+          displayMood = apiMood ?? (anchorFetchFailed ? localMood : null);
+        } else {
+          displayMood = localMood;
+        }
+
+        /** Slot gating is local; server holds one mood row per user (upsert). */
+        const done = localComplete;
         let list: JournalEntry[];
         if (user) {
           if (active) {
@@ -113,6 +210,7 @@ export function JournalScreen() {
         setEntries(list);
         setSlotKey(slot.storageKey);
         setSlotComplete(done);
+        setAnchoredMoodDisplay(displayMood);
         if (!done) {
           navigation.replace('JournalAnchor');
           return;
@@ -140,7 +238,10 @@ export function JournalScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}>
         {slotComplete && slotKey ? (
-          <AnchoredSummary slotKey={slotKey} />
+          <AnchoredSummary
+            slotKey={slotKey}
+            mood={anchoredMoodDisplay}
+          />
         ) : null}
 
         <Surface style={styles.hero}>
@@ -218,20 +319,14 @@ export function JournalScreen() {
   );
 }
 
-function AnchoredSummary({ slotKey }: { slotKey: string }) {
-  const [mood, setMood] = React.useState<string | null>(null);
+function AnchoredSummary({
+  slotKey,
+  mood,
+}: {
+  slotKey: string;
+  mood: string | null;
+}) {
   const periodLabel = periodLabelFromStorageKey(slotKey);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const m = await getJournalMoodForSlot(slotKey);
-      if (!cancelled) setMood(m);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [slotKey]);
 
   if (!mood) {
     return null;
@@ -413,7 +508,20 @@ const styles = StyleSheet.create({
     lineHeight: 34,
     fontStyle: 'italic',
   },
-  pillsRow: { marginTop: 12, flexDirection: 'row', gap: 10 },
+  pillsRow: { marginTop: 12, flexDirection: 'row', gap: TAG_ROW_GAP },
+  tagRowClip: {
+    marginTop: 12,
+    overflow: 'hidden',
+  },
+  tagMarqueeTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tagMarqueeSegment: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: TAG_ROW_GAP,
+  },
   pill: {
     paddingHorizontal: 12,
     paddingVertical: 8,

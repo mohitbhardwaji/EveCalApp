@@ -4,11 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { JournalMoodCheckInContent } from '../../components/JournalMoodCheckIn';
+import type { AppMoodOption } from '../../lib/supabase/moodOptions';
 import {
-  FALLBACK_MOOD_OPTIONS_QUICK,
-  fetchMoodOptionsByType,
-  type AppMoodOption,
-} from '../../lib/supabase/moodOptions';
+  FALLBACK_TAG_OPTIONS,
+  fetchActiveTagOptions,
+  mapTagOptionsToAnchorMoodOptions,
+} from '../../lib/supabase/tagOptions';
 import { saveMoodToSupabase } from '../../lib/supabase/moods';
 import type { JournalStackParamList } from '../../navigation/types';
 import {
@@ -27,15 +28,16 @@ export function JournalMoodCheckInScreen() {
   React.useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const { options, error } = await fetchMoodOptionsByType('quick');
+      const { options: tags, error } = await fetchActiveTagOptions();
       if (cancelled) {
         return;
       }
       if (__DEV__ && error) {
         // eslint-disable-next-line no-console
-        console.log('[journal] mood_options quick fetch failed, using fallback', error);
+        console.log('[journal] tag_options fetch failed, using fallback', error);
       }
-      const next = options.length > 0 ? options : FALLBACK_MOOD_OPTIONS_QUICK;
+      const source = tags.length > 0 ? tags : FALLBACK_TAG_OPTIONS;
+      const next = mapTagOptionsToAnchorMoodOptions(source);
       setMoodOptions(next);
     })();
     return () => {

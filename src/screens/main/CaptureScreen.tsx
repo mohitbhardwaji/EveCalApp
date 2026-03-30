@@ -12,6 +12,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
+import { VoiceTranscriptReviewModal } from '../../components/capture/VoiceTranscriptReviewModal';
 import { WarmAlertDialog } from '../../components/WarmAlertDialog';
 import {
   formatDurationMmSs,
@@ -21,6 +22,7 @@ import {
 import { VOICE_CAPTURE_AUDIO_SET } from '../../native/recordingAudioSet';
 import { EveCalTheme } from '../../theme/theme';
 import { TopHeader } from '../../components/TopHeader';
+import { transcribeAudioWithGemini } from '../../lib/speech/transcribeWithGemini';
 import {
   consumeCaptureCategoryIntent,
   type CaptureCategoryIntent,
@@ -101,16 +103,26 @@ export function CaptureScreen() {
     React.useState<CaptureCategoryIntent | null>(null);
   const [isRecording, setIsRecording] = React.useState(false);
   const [recordSecs, setRecordSecs] = React.useState(0);
-  const [lastFilePath, setLastFilePath] = React.useState<string | null>(null);
   const [warmAlert, setWarmAlert] = React.useState<{
     title: string;
     message: string;
   } | null>(null);
+  const [reviewOpen, setReviewOpen] = React.useState(false);
+  const [reviewLoading, setReviewLoading] = React.useState(false);
+  const [reviewError, setReviewError] = React.useState<string | null>(null);
+  const [reviewText, setReviewText] = React.useState('');
 
   const isRecordingRef = React.useRef(false);
+  const mountedRef = React.useRef(true);
   React.useEffect(() => {
     isRecordingRef.current = isRecording;
   }, [isRecording]);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     return () => {
@@ -137,15 +149,59 @@ export function CaptureScreen() {
     try {
       const path = await ar.stopRecorder();
       ar.removeRecordBackListener();
-      setLastFilePath(path ?? null);
+      setIsRecording(false);
+      setRecordSecs(0);
+      if (path) {
+        setReviewText('');
+        setReviewError(null);
+        setReviewOpen(true);
+        setReviewLoading(true);
+        const result = await transcribeAudioWithGemini(path);
+        if (!mountedRef.current) {
+          return;
+        }
+        if (result.ok) {
+          setReviewText(result.text);
+          setReviewError(null);
+        } else {
+          setReviewError(result.message);
+        }
+        setReviewLoading(false);
+      }
     } catch (e) {
       console.warn('stopRecorder', e);
       ar.removeRecordBackListener();
-    } finally {
       setIsRecording(false);
       setRecordSecs(0);
     }
   }, []);
+
+  const closeReview = React.useCallback(() => {
+    setReviewOpen(false);
+    setReviewLoading(false);
+    setReviewError(null);
+    setReviewText('');
+  }, []);
+
+  const submitReview = React.useCallback(() => {
+    const t = reviewText.trim();
+    if (!t) {
+      setWarmAlert({
+        title: 'Add something to submit',
+        message:
+          'Type a note or wait for transcription. You can also close and record again.',
+      });
+      return;
+    }
+    const preview = t.length > 400 ? `${t.slice(0, 400)}…` : t;
+    setWarmAlert({
+      title: 'Capture saved',
+      message: pathCategory
+        ? `Linked to “${pathCategory.categoryTitle}”.\n\n${preview}`
+        : preview,
+    });
+    closeReview();
+  }, [closeReview, pathCategory, reviewText]);
 
   const startRecording = React.useCallback(async () => {
     const ar = tryLoadAudioRecorder();
@@ -327,6 +383,15 @@ export function CaptureScreen() {
         message={warmAlert?.message ?? ''}
         onDismiss={() => setWarmAlert(null)}
       />
+      <VoiceTranscriptReviewModal
+        visible={reviewOpen}
+        loading={reviewLoading}
+        errorHint={reviewError}
+        value={reviewText}
+        onChangeText={setReviewText}
+        onSubmit={submitReview}
+        onDiscard={closeReview}
+      />
       <TopHeader />
 
       {pathCategory ? (
@@ -466,11 +531,6 @@ export function CaptureScreen() {
           </Pressable>
         ) : null}
 
-        {lastFilePath && !isRecording ? (
-          <Text style={styles.savedHint} numberOfLines={1}>
-            Recording saved.
-          </Text>
-        ) : null}
       </View>
     </View>
   );
@@ -662,11 +722,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     letterSpacing: 0.3,
-  },
-  savedHint: {
-    marginTop: 10,
-    fontSize: 11,
-    color: 'rgba(58,45,42,0.35)',
-    paddingHorizontal: 24,
   },
 });

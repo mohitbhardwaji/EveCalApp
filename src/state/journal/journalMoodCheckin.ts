@@ -132,3 +132,36 @@ export function periodLabelFromStorageKey(storageKey: string): string {
   if (storageKey.endsWith('_night')) return 'Night';
   return '';
 }
+
+/**
+ * Local time bounds for a slot key (matches {@link getCurrentJournalSlot} windows).
+ * Used to match `moods.created_at` on the server to the same anchor period.
+ */
+export function journalSlotLocalTimeBounds(
+  storageKey: string,
+): { start: Date; end: Date } | null {
+  const re = /^(\d{4})-(\d{2})-(\d{2})_(morning|afternoon|night)$/;
+  const m = re.exec(storageKey);
+  if (!m) {
+    return null;
+  }
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  const period = m[4];
+  if (period === 'morning') {
+    return {
+      start: new Date(y, mo, d, 5, 0, 0, 0),
+      end: new Date(y, mo, d, 12, 0, 0, 0),
+    };
+  }
+  if (period === 'afternoon') {
+    return {
+      start: new Date(y, mo, d, 12, 0, 0, 0),
+      end: new Date(y, mo, d, 17, 0, 0, 0),
+    };
+  }
+  const start = new Date(y, mo, d, 17, 0, 0, 0);
+  const end = new Date(y, mo, d + 1, 5, 0, 0, 0);
+  return { start, end };
+}
