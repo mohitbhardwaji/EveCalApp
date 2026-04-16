@@ -1,71 +1,105 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
-import { EveCalTheme } from '../../theme/theme';
 import type { RootStackParamList } from '../../navigation/types';
+import {
+  fetchNotificationsForUser,
+  markNotificationRead,
+  notificationDisplay,
+  type NotificationRow,
+} from '../../lib/supabase/notificationsApi';
+import { useNotificationBadge } from '../../state/notifications/NotificationBadgeContext';
+import { useAuth } from '../../state/auth/AuthContext';
+import { EveCalTheme } from '../../theme/theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Notifications'>;
 
-type SampleNotif = {
-  id: string;
-  icon: React.ComponentProps<typeof Feather>['name'];
-  iconBg: string;
-  title: string;
-  body: string;
-  time: string;
-  unread?: boolean;
-};
-
-const SAMPLE_NOTIFICATIONS: SampleNotif[] = [
-  {
-    id: '1',
-    icon: 'sun',
-    iconBg: 'rgba(255, 220, 180, 0.55)',
-    title: 'Morning reflection',
-    body: 'A gentle nudge to check in with your journal and set an intention for the day.',
-    time: '8:00 AM',
-    unread: true,
-  },
-  {
-    id: '2',
-    icon: 'heart',
-    iconBg: 'rgba(245, 210, 220, 0.55)',
-    title: 'Path milestone',
-    body: 'You’re close to completing your Growth path this week — keep going.',
-    time: 'Yesterday',
-    unread: true,
-  },
-  {
-    id: '3',
-    icon: 'calendar',
-    iconBg: 'rgba(200, 228, 212, 0.65)',
-    title: 'Weekly calm reminder',
-    body: 'Schedule a short breathing break. Your future self will thank you.',
-    time: 'Mon',
-  },
-  {
-    id: '4',
-    icon: 'gift',
-    iconBg: 'rgba(220, 230, 250, 0.7)',
-    title: 'Eve Cal tip',
-    body: 'Try tagging entries with Gratitude — it makes revisiting highlights easier.',
-    time: 'Mar 15',
-  },
-  {
-    id: '5',
-    icon: 'bell',
-    iconBg: 'rgba(58,45,42,0.08)',
-    title: 'Notifications are on',
-    body: 'You’ll get light reminders here. Turn them off anytime in Settings.',
-    time: 'Mar 10',
-  },
+const ICON_BG: string[] = [
+  'rgba(255, 220, 180, 0.55)',
+  'rgba(245, 210, 220, 0.55)',
+  'rgba(200, 228, 212, 0.65)',
+  'rgba(220, 230, 250, 0.7)',
+  'rgba(168, 201, 190, 0.45)',
 ];
+
+const ICON_NAMES: React.ComponentProps<typeof Feather>['name'][] = [
+  'bell',
+  'heart',
+  'calendar',
+  'sun',
+  'gift',
+];
+
+function iconForIndex(i: number): {
+  name: React.ComponentProps<typeof Feather>['name'];
+  bg: string;
+} {
+  return {
+    name: ICON_NAMES[i % ICON_NAMES.length],
+    bg: ICON_BG[i % ICON_BG.length],
+  };
+}
 
 export function NotificationsScreen() {
   const navigation = useNavigation<Nav>();
+  const { user } = useAuth();
+  const { refreshUnreadCount } = useNotificationBadge();
+  const [items, setItems] = React.useState<NotificationRow[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const load = React.useCallback(async () => {
+    if (!user) {
+      setItems([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    const result = await fetchNotificationsForUser();
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.message);
+      setItems([]);
+      return;
+    }
+    setItems(result.items);
+  }, [user]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void load();
+      void refreshUnreadCount();
+    }, [load, refreshUnreadCount]),
+  );
+
+  const onPressNotification = React.useCallback(
+    async (row: NotificationRow) => {
+      if (row.is_read !== true) {
+        const r = await markNotificationRead(row.id);
+        if (r.ok) {
+          setItems(prev =>
+            prev.map(n =>
+              n.id === row.id ? { ...n, is_read: true } : n,
+            ),
+          );
+          void refreshUnreadCount();
+        }
+      }
+    },
+    [refreshUnreadCount],
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -88,23 +122,49 @@ export function NotificationsScreen() {
           Stay in rhythm with gentle reminders and updates.
         </Text>
 
-        {SAMPLE_NOTIFICATIONS.map(n => (
-          <View
-            key={n.id}
-            style={[styles.card, n.unread && styles.cardUnread]}>
-            <View style={[styles.iconWrap, { backgroundColor: n.iconBg }]}>
-              <Feather name={n.icon} size={20} color="rgba(58,45,42,0.72)" />
-            </View>
-            <View style={styles.cardBody}>
-              <View style={styles.cardTop}>
-                <Text style={styles.cardTitle}>{n.title}</Text>
-                {n.unread ? <View style={styles.dot} /> : null}
-              </View>
-              <Text style={styles.cardText}>{n.body}</Text>
-              <Text style={styles.cardTime}>{n.time}</Text>
-            </View>
+        {!user ? (
+          <Text style={styles.hint}>Sign in to see your notifications.</Text>
+        ) : loading ? (
+          <View style={styles.centered}>
+            <ActivityIndicator color={EveCalTheme.colors.textMuted} />
           </View>
-        ))}
+        ) : error ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : items.length === 0 ? (
+          <Text style={styles.hint}>You’re all caught up. No notifications yet.</Text>
+        ) : (
+          items.map((n, index) => {
+            const { name: iconName, bg } = iconForIndex(index);
+            const title = notificationDisplay.title(n);
+            const body = notificationDisplay.body(n);
+            const time = notificationDisplay.time(n.created_at);
+            const unread = n.is_read !== true;
+            return (
+              <Pressable
+                key={n.id}
+                onPress={() => void onPressNotification(n)}
+                style={({ pressed }) => [
+                  styles.card,
+                  unread && styles.cardUnread,
+                  pressed && styles.cardPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${title}. ${unread ? 'Unread. ' : ''}Tap to mark read.`}>
+                <View style={[styles.iconWrap, { backgroundColor: bg }]}>
+                  <Feather name={iconName} size={20} color="rgba(58,45,42,0.72)" />
+                </View>
+                <View style={styles.cardBody}>
+                  <View style={styles.cardTop}>
+                    <Text style={styles.cardTitle}>{title}</Text>
+                    {unread ? <View style={styles.dot} /> : null}
+                  </View>
+                  {body ? <Text style={styles.cardText}>{body}</Text> : null}
+                  {time ? <Text style={styles.cardTime}>{time}</Text> : null}
+                </View>
+              </Pressable>
+            );
+          })
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -150,6 +210,24 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 6,
   },
+  hint: {
+    fontSize: 14,
+    color: EveCalTheme.colors.textMuted,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginTop: 24,
+    paddingHorizontal: 12,
+  },
+  errorText: {
+    fontSize: 14,
+    color: 'rgba(183, 92, 72, 0.95)',
+    lineHeight: 20,
+    marginTop: 12,
+  },
+  centered: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
   card: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -159,6 +237,9 @@ const styles = StyleSheet.create({
     backgroundColor: EveCalTheme.colors.card,
     borderWidth: 1,
     borderColor: EveCalTheme.colors.border,
+  },
+  cardPressed: {
+    opacity: 0.92,
   },
   cardUnread: {
     borderColor: 'rgba(168, 201, 190, 0.45)',

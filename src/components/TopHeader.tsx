@@ -1,10 +1,11 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Feather from 'react-native-vector-icons/Feather';
 import { navigateToRootSettings } from '../navigation/navigateToRootSettings';
 import { navigateToNotifications } from '../navigation/navigateToNotifications';
+import { useNotificationBadge } from '../state/notifications/NotificationBadgeContext';
 import { EveCalTheme } from '../theme/theme';
 
 export function TopHeader({
@@ -19,6 +20,13 @@ export function TopHeader({
   backgroundColor?: string;
 }) {
   const navigation = useNavigation();
+  const { unreadCount, refreshUnreadCount } = useNotificationBadge();
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void refreshUnreadCount();
+    }, [refreshUnreadCount]),
+  );
 
   const openProfileOrSettings = () => {
     if (onPressProfile) {
@@ -47,8 +55,21 @@ export function TopHeader({
             hitSlop={10}
             style={styles.iconBtn}
             accessibilityRole="button"
-            accessibilityLabel="Notifications">
-            <Feather name="bell" size={20} color={stylesVars.iconColor} />
+            accessibilityLabel={
+              unreadCount > 0
+                ? `Notifications, ${unreadCount} unread`
+                : 'Notifications'
+            }>
+            <View style={styles.bellWrap}>
+              <Feather name="bell" size={20} color={stylesVars.iconColor} />
+              {unreadCount > 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {unreadCount > 99 ? '99+' : String(unreadCount)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
           </Pressable>
           <Pressable
             onPress={openProfileOrSettings}
@@ -89,6 +110,32 @@ const styles = StyleSheet.create({
     width: 34,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  bellWrap: {
+    position: 'relative',
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: 'rgba(183, 220, 198, 0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(47, 141, 119, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: 'rgba(35, 95, 78, 0.95)',
   },
 });
 

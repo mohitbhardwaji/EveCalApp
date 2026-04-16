@@ -8,14 +8,16 @@ import { SettingsStackNavigator } from './SettingsStackNavigator';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
 import { isPremiumUser } from '../lib/premium';
 import { useAuth } from '../state/auth/AuthContext';
+import { useSubscription } from '../state/subscription/SubscriptionContext';
 
 const Root = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
   const { isAuthed, isHydrated } = useAuth();
+  const { loading: subscriptionLoading } = useSubscription();
 
   // Don't flash stacks while loading persisted state.
-  if (!isHydrated) {
+  if (!isHydrated || subscriptionLoading) {
     return null;
   }
 
@@ -57,10 +59,11 @@ export function RootNavigator() {
 
 export function useShouldShowPremiumModal() {
   const { isAuthed, premiumSeen, user, userData } = useAuth();
+  const { isPro } = useSubscription();
   if (!isAuthed) {
     return false;
   }
-  if (user != null && isPremiumUser(userData)) {
+  if (user != null && (isPremiumUser(userData) || isPro)) {
     return false;
   }
   return !premiumSeen;

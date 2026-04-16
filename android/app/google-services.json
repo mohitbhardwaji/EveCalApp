@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "685169256033",
+    "project_id": "eve-cal-96b02",
+    "storage_bucket": "eve-cal-96b02.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:685169256033:android:ab012d308e45a8ced3ac20",
+        "android_client_info": {
+          "package_name": "com.company.evecal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDvg0J0O3Ah2HmwgmRY_fuMu_r9ihOM6Ms"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

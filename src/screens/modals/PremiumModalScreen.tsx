@@ -1,5 +1,7 @@
 import React from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -15,6 +17,8 @@ import { PremiumSparkleIcon } from '../../components/premium/PremiumSparkleIcon'
 import { isPremiumUser } from '../../lib/premium';
 import type { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../state/auth/AuthContext';
+import { presentProPaywall } from '../../services/revenuecat/revenueCatUi';
+import { useSubscription } from '../../state/subscription/SubscriptionContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Premium'>;
 
@@ -132,7 +136,9 @@ function FeatureRow({ label, isLast }: { label: string; isLast?: boolean }) {
 
 export function PremiumModalScreen({ navigation }: Props) {
   const { markPremiumSeen, signOut, user, userData } = useAuth();
+  const { isPro, refresh } = useSubscription();
   const [plan, setPlan] = React.useState<'monthly' | 'yearly'>('yearly');
+  const [ctaLoading, setCtaLoading] = React.useState(false);
 
   const dismissAllowEntry = React.useCallback(async () => {
     await markPremiumSeen();
@@ -141,7 +147,7 @@ export function PremiumModalScreen({ navigation }: Props) {
 
   const handleClose = React.useCallback(async () => {
     const strictNonPremiumPaywall =
-      user != null && !isPremiumUser(userData);
+      user != null && !isPremiumUser(userData) && !isPro;
     if (strictNonPremiumPaywall) {
       await signOut();
       return;
@@ -150,8 +156,20 @@ export function PremiumModalScreen({ navigation }: Props) {
   }, [dismissAllowEntry, signOut, user, userData]);
 
   const handleStartTrial = React.useCallback(async () => {
-    await dismissAllowEntry();
-  }, [dismissAllowEntry]);
+    setCtaLoading(true);
+    try {
+      const { unlocked } = await presentProPaywall();
+      await refresh();
+      if (unlocked) {
+        await dismissAllowEntry();
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      Alert.alert('Could not open paywall', msg);
+    } finally {
+      setCtaLoading(false);
+    }
+  }, [dismissAllowEntry, refresh]);
 
   return (
     <View style={styles.backdrop}>
@@ -214,11 +232,17 @@ export function PremiumModalScreen({ navigation }: Props) {
 
             <Pressable
               onPress={handleStartTrial}
+              disabled={ctaLoading}
               style={({ pressed }) => [
                 styles.ctaBtn,
+                ctaLoading && styles.ctaBtnDisabled,
                 pressed && styles.ctaBtnPressed,
               ]}>
-              <Text style={styles.ctaText}>Start Free Trial</Text>
+              {ctaLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.ctaText}>Continue with RevenueCat</Text>
+              )}
             </Pressable>
 
             <Text style={styles.finePrint}>
@@ -497,6 +521,9 @@ const styles = StyleSheet.create({
   ctaBtnPressed: {
     opacity: 0.92,
     transform: [{ scale: 0.99 }],
+  },
+  ctaBtnDisabled: {
+    opacity: 0.75,
   },
   ctaText: {
     color: '#FFFFFF',

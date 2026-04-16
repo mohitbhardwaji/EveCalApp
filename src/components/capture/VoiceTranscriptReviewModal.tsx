@@ -83,7 +83,7 @@ export function VoiceTranscriptReviewModal({
             {loading ? (
               <View style={styles.loadingOverlay} pointerEvents="none">
                 <ActivityIndicator size="large" color="rgba(58,45,42,0.45)" />
-                <Text style={styles.loadingLabel}>Transcribing with Gemini…</Text>
+                <Text style={styles.loadingLabel}>Transcribing your audio…</Text>
               </View>
             ) : null}
           </View>

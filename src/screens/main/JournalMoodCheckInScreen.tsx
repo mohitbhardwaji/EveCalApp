@@ -1,9 +1,10 @@
 import React from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { JournalMoodCheckInContent } from '../../components/JournalMoodCheckIn';
+import { WarmAlertDialog } from '../../components/WarmAlertDialog';
 import type { AppMoodOption } from '../../lib/supabase/moodOptions';
 import {
   FALLBACK_TAG_OPTIONS,
@@ -24,6 +25,10 @@ export function JournalMoodCheckInScreen() {
   const [moodOptions, setMoodOptions] = React.useState<AppMoodOption[] | null>(
     null,
   );
+  const [notice, setNotice] = React.useState<{
+    title: string;
+    message: string;
+  } | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -52,18 +57,31 @@ export function JournalMoodCheckInScreen() {
       const displayLabel = opt?.label ?? moodKey;
       await saveJournalMoodForSlot(slot.storageKey, displayLabel);
       const sync = await saveMoodToSupabase(moodKey);
-      if (sync.kind === 'saved') {
-        Alert.alert('Mood saved 🎉');
-      } else if (sync.kind === 'error') {
-        Alert.alert('Could not sync mood', sync.message);
+      if (sync.kind === 'error') {
+        setNotice({
+          title: 'Could not sync mood',
+          message: sync.message,
+        });
+        return;
       }
       navigation.replace('JournalMain');
     },
     [moodOptions, navigation],
   );
 
+  const dismissNotice = React.useCallback(() => {
+    setNotice(null);
+    navigation.replace('JournalMain');
+  }, [navigation]);
+
   return (
     <View style={styles.root}>
+      <WarmAlertDialog
+        visible={notice != null}
+        title={notice?.title ?? ''}
+        message={notice?.message ?? ''}
+        onDismiss={dismissNotice}
+      />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         {moodOptions == null ? (
           <View style={styles.loading}>

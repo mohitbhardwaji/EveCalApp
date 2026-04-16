@@ -1,3 +1,4 @@
+// @refresh reset
 import React from 'react';
 import {
   Animated,
@@ -5,6 +6,7 @@ import {
   PermissionsAndroid,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -23,6 +25,7 @@ import { VOICE_CAPTURE_AUDIO_SET } from '../../native/recordingAudioSet';
 import { EveCalTheme } from '../../theme/theme';
 import { TopHeader } from '../../components/TopHeader';
 import { transcribeAudioWithGemini } from '../../lib/speech/transcribeWithGemini';
+import { classifyTaskText } from '../../lib/tasks/classifyTask';
 import {
   consumeCaptureCategoryIntent,
   type CaptureCategoryIntent,
@@ -46,6 +49,40 @@ const REC_BLUE = {
   stopBg: 'rgba(65, 115, 175, 0.96)',
   stopShadow: 'rgba(55, 100, 160, 0.42)',
 };
+
+type QueuedCaptureTask = {
+  id: string;
+  text: string;
+  createdAt: number;
+  categoryTitle?: string;
+  status: 'queued' | 'processing' | 'done' | 'failed';
+};
+
+function taskStatusCopy(status: QueuedCaptureTask['status']): string {
+  switch (status) {
+    case 'queued':
+      return 'Queued';
+    case 'processing':
+      return 'Processing';
+    case 'done':
+      return 'Processed';
+    case 'failed':
+      return 'Failed';
+  }
+}
+
+function taskStatusColor(status: QueuedCaptureTask['status']): string {
+  switch (status) {
+    case 'queued':
+      return 'rgba(75, 122, 166, 0.95)';
+    case 'processing':
+      return 'rgba(47, 141, 119, 0.95)';
+    case 'done':
+      return 'rgba(47, 141, 119, 0.95)';
+    case 'failed':
+      return 'rgba(183, 92, 72, 0.95)';
+  }
+}
 
 function recordingFailureMessage(nativeDetail: string): string {
   const base =
@@ -111,9 +148,11 @@ export function CaptureScreen() {
   const [reviewLoading, setReviewLoading] = React.useState(false);
   const [reviewError, setReviewError] = React.useState<string | null>(null);
   const [reviewText, setReviewText] = React.useState('');
+  const [queuedTasks, setQueuedTasks] = React.useState<QueuedCaptureTask[]>([]);
 
   const isRecordingRef = React.useRef(false);
   const mountedRef = React.useRef(true);
+  const activeProcessingIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     isRecordingRef.current = isRecording;
   }, [isRecording]);
@@ -138,6 +177,10 @@ export function CaptureScreen() {
   const dismissCategory = () => {
     setPathCategory(null);
   };
+
+  const removeQueuedTask = React.useCallback((taskId: string) => {
+    setQueuedTasks(current => current.filter(task => task.id !== taskId));
+  }, []);
 
   const stopRecording = React.useCallback(async () => {
     const ar = tryLoadAudioRecorder();
@@ -183,6 +226,46 @@ export function CaptureScreen() {
     setReviewText('');
   }, []);
 
+  const processQueuedTask = React.useCallback(async (task: QueuedCaptureTask) => {
+    activeProcessingIdRef.current = task.id;
+    setQueuedTasks(current =>
+      current.map(item =>
+        item.id === task.id ? { ...item, status: 'processing' } : item,
+      ),
+    );
+
+    const result = await classifyTaskText(task.text);
+    if (!mountedRef.current) {
+      return;
+    }
+
+    activeProcessingIdRef.current = null;
+    setQueuedTasks(current =>
+      current.map(item =>
+        item.id === task.id
+          ? { ...item, status: result.ok ? 'done' : 'failed' }
+          : item,
+      ),
+    );
+    setWarmAlert({
+      title: result.ok ? 'Task processed' : 'Task processing failed',
+      message: result.ok
+        ? 'Your task has been processed successfully.'
+        : 'We could not process your task right now. Please try again.',
+    });
+  }, []);
+
+  React.useEffect(() => {
+    if (activeProcessingIdRef.current) {
+      return;
+    }
+    const next = queuedTasks.find(task => task.status === 'queued');
+    if (!next) {
+      return;
+    }
+    void processQueuedTask(next);
+  }, [processQueuedTask, queuedTasks]);
+
   const submitReview = React.useCallback(() => {
     const t = reviewText.trim();
     if (!t) {
@@ -193,13 +276,22 @@ export function CaptureScreen() {
       });
       return;
     }
-    const preview = t.length > 400 ? `${t.slice(0, 400)}…` : t;
     setWarmAlert({
-      title: 'Capture saved',
-      message: pathCategory
-        ? `Linked to “${pathCategory.categoryTitle}”.\n\n${preview}`
-        : preview,
+      title: 'Task is being processed',
+      message:
+        'Your task is being processed and will be added shortly. We will notify you once it is ready.',
     });
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setQueuedTasks(current => [
+      {
+        id,
+        text: t,
+        createdAt: Date.now(),
+        categoryTitle: pathCategory?.categoryTitle,
+        status: 'queued',
+      },
+      ...current,
+    ]);
     closeReview();
   }, [closeReview, pathCategory, reviewText]);
 
@@ -531,6 +623,58 @@ export function CaptureScreen() {
           </Pressable>
         ) : null}
 
+        {queuedTasks.length > 0 ? (
+          <View style={styles.queueSection}>
+            <View style={styles.queueHeader}>
+              <Text style={styles.queueTitle}>Tasks</Text>
+              <Text style={styles.queueCount}>{queuedTasks.length}</Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.queueRail}>
+              {queuedTasks.map(task => (
+                <View key={task.id} style={styles.queueCard}>
+                  <View style={styles.queueCardTop}>
+                    <View
+                      style={[
+                        styles.queueStatusPill,
+                        { backgroundColor: taskStatusColor(task.status) },
+                      ]}>
+                      <Text style={styles.queueStatusText}>
+                        {taskStatusCopy(task.status)}
+                      </Text>
+                    </View>
+                    <View style={styles.queueCardActions}>
+                      <Text style={styles.queueTime}>
+                        {new Date(task.createdAt).toLocaleTimeString([], {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </Text>
+                      {task.status === 'done' ? (
+                        <Pressable
+                          onPress={() => removeQueuedTask(task.id)}
+                          hitSlop={10}
+                          style={styles.queueRemoveBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel="Remove processed task">
+                          <Feather name="x" size={14} color="rgba(58,45,42,0.72)" />
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  </View>
+                  {task.categoryTitle ? (
+                    <Text style={styles.queueCategory}>{task.categoryTitle}</Text>
+                  ) : null}
+                  <Text style={styles.queueTaskText} numberOfLines={4}>
+                    {task.text}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -722,5 +866,89 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     letterSpacing: 0.3,
+  },
+  queueSection: {
+    width: '100%',
+    marginTop: 26,
+  },
+  queueHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  queueTitle: {
+    fontSize: 18,
+    fontFamily: EveCalTheme.typography.serif,
+    color: EveCalTheme.colors.text,
+  },
+  queueCount: {
+    minWidth: 28,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(75,122,166,0.12)',
+    color: EveCalTheme.colors.accent2,
+    fontWeight: '700',
+  },
+  queueRail: {
+    paddingRight: 10,
+    gap: 14,
+  },
+  queueCard: {
+    width: 270,
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(58,45,42,0.08)',
+  },
+  queueCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    gap: 10,
+  },
+  queueCardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  queueStatusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  queueStatusText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  queueTime: {
+    color: EveCalTheme.colors.textMuted,
+    fontSize: 12,
+  },
+  queueRemoveBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(58,45,42,0.06)',
+  },
+  queueCategory: {
+    color: EveCalTheme.colors.accent2,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  queueTaskText: {
+    color: EveCalTheme.colors.text,
+    fontSize: 16,
+    lineHeight: 22,
   },
 });

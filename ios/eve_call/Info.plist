@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>eve_call</string>
+	<string>Eve &amp; Cal</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -37,6 +37,12 @@
 	<string></string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Eve Cal records short voice captures when you tap the microphone.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Eve Cal uses your camera to capture task completion photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Eve Cal needs photo library access so you can attach pictures to tasks.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Eve Cal saves captured task photos when needed.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -53,6 +59,10 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>

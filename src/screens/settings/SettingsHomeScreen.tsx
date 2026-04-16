@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +18,8 @@ import type { SettingsStackParamList } from '../../navigation/types';
 import { useAuth } from '../../state/auth/AuthContext';
 import { StorageKeys } from '../../state/auth/storageKeys';
 import { WarmAlertDialog } from '../../components/WarmAlertDialog';
+import { openCustomerCenter } from '../../services/revenuecat/revenueCatUi';
+import { useSubscription } from '../../state/subscription/SubscriptionContext';
 
 type Nav = NativeStackNavigationProp<SettingsStackParamList, 'SettingsMain'>;
 
@@ -25,8 +28,10 @@ const APP_VERSION = '1.0.0';
 export function SettingsHomeScreen() {
   const navigation = useNavigation<Nav>();
   const { signOut } = useAuth();
+  const { isPro, refresh } = useSubscription();
   const [notificationsOn, setNotificationsOn] = React.useState(true);
   const [logoutConfirmVisible, setLogoutConfirmVisible] = React.useState(false);
+  const [manageLoading, setManageLoading] = React.useState(false);
 
   React.useEffect(() => {
     let mounted = true;
@@ -54,6 +59,19 @@ export function SettingsHomeScreen() {
       /* ignore */
     }
   };
+
+  const handleManageSubscription = React.useCallback(async () => {
+    setManageLoading(true);
+    try {
+      await openCustomerCenter();
+      await refresh();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      Alert.alert('Could not open subscriptions', msg);
+    } finally {
+      setManageLoading(false);
+    }
+  }, [refresh]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -94,15 +112,33 @@ export function SettingsHomeScreen() {
           />
           <Divider />
           <Pressable
-            onPress={() => navigation.navigate('Payments')}
+            onPress={() => void handleManageSubscription()}
             style={styles.rowPress}>
             <SettingsRow
               icon="credit-card"
-              label="Payments"
+              label={isPro ? 'Manage Subscription' : 'See Plans'}
+              right={
+                manageLoading ? (
+                  <Text style={styles.rowMeta}>Opening…</Text>
+                ) : (
+                  <Feather
+                    name="chevron-right"
+                    size={20}
+                    color="rgba(58,45,42,0.35)"
+                  />
+                )
+              }
+            />
+          </Pressable>
+          <Divider />
+          <Pressable onPress={() => void handleManageSubscription()} style={styles.rowPress}>
+            <SettingsRow
+              icon="refresh-cw"
+              label="Open Customer Center"
               right={
                 <Feather
-                  name="chevron-right"
-                  size={20}
+                  name="external-link"
+                  size={18}
                   color="rgba(58,45,42,0.35)"
                 />
               }
@@ -299,6 +335,10 @@ const styles = StyleSheet.create({
   rowRight: {
     maxWidth: '52%',
     alignItems: 'flex-end',
+  },
+  rowMeta: {
+    color: 'rgba(58,45,42,0.5)',
+    fontSize: 12,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

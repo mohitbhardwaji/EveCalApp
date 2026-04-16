@@ -17,6 +17,10 @@ end
 target 'eve_call' do
   config = use_native_modules!
 
+  # Firebase (Swift) + static libs: module maps for GoogleUtilities (RN Firebase / Notifee).
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'FirebaseCoreInternal', :modular_headers => true
+
   # Ensure vector icon fonts are included for Feather/Material/etc.
   # (Some RN templates don't auto-add this pod until `pod install` after deps change.)
   pod 'RNVectorIcons', :path => '../node_modules/react-native-vector-icons'
@@ -34,5 +38,26 @@ target 'eve_call' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # RevenueCat UI + Firebase in mixed static/framework setups can trigger
+    # "non-modular-include-in-framework-module" on some simulator builds.
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |build_config|
+        build_config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+        if target.name == 'RNPaywalls'
+          build_config.build_settings['DEFINES_MODULE'] = 'NO'
+        end
+      end
+    end
+
+    installer.aggregate_targets.each do |aggregate_target|
+      aggregate_target.user_project.native_targets.each do |target|
+        target.build_configurations.each do |build_config|
+          build_config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+          build_config.build_settings['DEFINES_MODULE'] = 'NO'
+        end
+      end
+      aggregate_target.user_project.save
+    end
   end
 end

@@ -49,6 +49,14 @@ Requires FASTLANE_TEAM_ID (10-character Team ID from developer.apple.com → Mem
 
 sync_certificates then apply_xcode_signing (typical first-time Mac setup).
 
+### ios build_release
+
+```sh
+[bundle exec] fastlane ios build_release
+```
+
+Build a Release archive signed with the App Store profile from match.
+
 ----
 
 This README.md is auto-generated and will be re-generated every time [_fastlane_](https://fastlane.tools) is run.

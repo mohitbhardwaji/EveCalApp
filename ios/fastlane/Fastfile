@@ -4,6 +4,34 @@
 # Run from ios/:  export PATH="/opt/homebrew/opt/ruby/bin:$PATH" && bundle install && bundle exec fastlane sync_certificates
 # If you see "AEAD authentication tag verification failed", MATCH_PASSWORD does not match the repo passphrase.
 
+FASTLANE_DIR = File.dirname(__FILE__)
+
+module EveCalConnectApiKey
+  module_function
+
+  def load
+    key_id = ENV.fetch('APP_STORE_CONNECT_API_KEY_KEY_ID')
+    issuer_id = ENV.fetch('APP_STORE_CONNECT_API_KEY_ISSUER_ID')
+    content = ENV['APP_STORE_CONNECT_API_KEY_CONTENT']&.strip
+    if content && !content.empty?
+      Fastlane::Actions::AppStoreConnectApiKeyAction.run(
+        key_id: key_id,
+        issuer_id: issuer_id,
+        key_content: content,
+        is_key_content_base64: ENV.fetch('APP_STORE_CONNECT_API_KEY_CONTENT_IS_BASE64', 'true').casecmp('true').zero?
+      )
+    else
+      key_path = ENV.fetch('APP_STORE_CONNECT_API_KEY_PATH')
+      key_path = File.expand_path(key_path, FASTLANE_DIR) unless key_path.start_with?('/')
+      Fastlane::Actions::AppStoreConnectApiKeyAction.run(
+        key_id: key_id,
+        issuer_id: issuer_id,
+        key_filepath: key_path
+      )
+    end
+  end
+end
+
 default_platform(:ios)
 
 platform :ios do
@@ -54,5 +82,55 @@ platform :ios do
   lane :setup_signing do
     sync_certificates
     apply_xcode_signing
+  end
+
+  desc 'Build a Release archive signed with the App Store profile from match.'
+  lane :build_release do
+    sync_certificates
+
+    gym(
+      workspace: 'eve_call.xcworkspace',
+      scheme: 'eve_call',
+      configuration: 'Release',
+      clean: true,
+      export_method: 'app-store',
+      export_options: {
+        signingStyle: 'manual',
+        provisioningProfiles: {
+          'com.evencal.app' => 'match AppStore com.evencal.app'
+        }
+      },
+      xcargs: 'DEVELOPMENT_TEAM=Y2H26URNHR',
+      skip_profile_detection: true
+    )
+  end
+
+  desc 'Upload an existing .ipa to TestFlight using App Store Connect API key.'
+  desc 'From ios/: bundle exec fastlane ios upload_testflight ipa:./build/eve_call.ipa'
+  lane :upload_testflight do |options|
+    api_key = EveCalConnectApiKey.load
+
+    ipa = options[:ipa]
+    UI.user_error!('Pass ipa: path to your .ipa (e.g. ipa:./build/App.ipa)') if ipa.to_s.strip.empty?
+
+    ipa = File.expand_path(ipa, Dir.pwd)
+    UI.user_error!("IPA not found: #{ipa}") unless File.file?(ipa)
+
+    upload_to_testflight(
+      api_key: api_key,
+      ipa: ipa,
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  desc 'build_release then upload to TestFlight (API key; set APP_STORE_CONNECT_* in fastlane/.env).'
+  lane :beta do
+    api_key = EveCalConnectApiKey.load
+
+    build_release
+    upload_to_testflight(
+      api_key: api_key,
+      skip_waiting_for_build_processing: true
+    )
   end
 end

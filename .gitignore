@@ -38,6 +38,10 @@ local.properties
 # Env (API keys)
 .env
 
+# Firebase Admin SDK (private_key) — server only; never ship in the mobile app
+src/config/*firebase-adminsdk*.json
+**/firebase-adminsdk*.json
+
 # node.js
 #
 node_modules/
@@ -52,6 +56,7 @@ yarn-error.log
 # https://docs.fastlane.tools/best-practices/source-control/
 
 ios/fastlane/.env
+ios/fastlane/AuthKey_*.p8
 
 **/fastlane/report.xml
 **/fastlane/Preview.html

@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -9,52 +10,30 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
+import type { MissionTaskOption } from '../lib/supabase/missionsApi';
 import { EveCalTheme } from '../theme/theme';
 
-export type MissionTaskOption = {
-  id: string;
-  title: string;
-  timeLabel: string;
-  iconName: string;
-  iconBg: string;
-};
-
-const DEFAULT_TASKS: MissionTaskOption[] = [
-  {
-    id: '1',
-    title: 'Timmy has soccer',
-    timeLabel: '10:00 AM',
-    iconName: 'smile',
-    iconBg: '#7DAFFF',
-  },
-  {
-    id: '2',
-    title: 'Dinner: Pasta',
-    timeLabel: '6:00 PM',
-    iconName: 'coffee',
-    iconBg: '#D4A574',
-  },
-  {
-    id: '3',
-    title: 'Water bill due',
-    timeLabel: 'Today',
-    iconName: 'dollar-sign',
-    iconBg: '#9AAE7A',
-  },
-];
+export type { MissionTaskOption };
 
 type Props = {
   visible: boolean;
   onClose: () => void;
   onCreate: (selectedIds: string[]) => void;
-  tasks?: MissionTaskOption[];
+  tasks: MissionTaskOption[];
+  loading?: boolean;
+  error?: string | null;
+  /** First mission for the day vs adding more tasks later */
+  mode?: 'create' | 'add';
 };
 
 export function CreateMissionCardModal({
   visible,
   onClose,
   onCreate,
-  tasks = DEFAULT_TASKS,
+  tasks,
+  loading = false,
+  error = null,
+  mode = 'create',
 }: Props) {
   const { height } = useWindowDimensions();
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -75,6 +54,9 @@ export function CreateMissionCardModal({
   };
 
   const count = selected.size;
+  const title =
+    mode === 'add' ? 'Add tasks to mission' : 'Create Mission Card';
+  const actionLabel = mode === 'add' ? 'Add' : 'Create';
 
   return (
     <Modal
@@ -87,47 +69,68 @@ export function CreateMissionCardModal({
         <Pressable
           style={[styles.sheet, { maxHeight: height * 0.78 }]}
           onPress={e => e.stopPropagation()}>
-          <Text style={styles.title}>Create Mission Card</Text>
+          <Text style={styles.title}>{title}</Text>
           <Text style={styles.subtitle}>
             Select the tasks you want to share with Cal
           </Text>
 
-          <ScrollView
-            style={styles.list}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled">
-            {tasks.map(task => {
-              const isOn = selected.has(task.id);
-              return (
-                <Pressable
-                  key={task.id}
-                  onPress={() => toggle(task.id)}
-                  style={({ pressed }) => [
-                    styles.row,
-                    pressed && styles.rowPressed,
-                  ]}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: isOn }}>
-                  <View
-                    style={[styles.iconCircle, { backgroundColor: task.iconBg }]}>
-                    <Feather name={task.iconName} size={20} color="#fff" />
-                  </View>
-                  <View style={styles.rowText}>
-                    <Text style={styles.rowTitle}>{task.title}</Text>
-                    <Text style={styles.rowMeta}>{task.timeLabel}</Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.radioOuter,
-                      isOn && styles.radioOuterSelected,
-                    ]}>
-                    {isOn ? <View style={styles.radioInner} /> : null}
-                  </View>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          {loading ? (
+            <View style={styles.centerBlock}>
+              <ActivityIndicator color={EveCalTheme.colors.premiumBrown} />
+              <Text style={styles.hint}>Loading your tasks…</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.centerBlock}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : tasks.length === 0 ? (
+            <View style={styles.centerBlock}>
+              <Text style={styles.hint}>
+                No tasks available to add. Create tasks elsewhere first, or
+                they may already be on today's mission.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              style={styles.list}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled">
+              {tasks.map(task => {
+                const isOn = selected.has(task.id);
+                return (
+                  <Pressable
+                    key={task.id}
+                    onPress={() => toggle(task.id)}
+                    style={({ pressed }) => [
+                      styles.row,
+                      pressed && styles.rowPressed,
+                    ]}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: isOn }}>
+                    <View
+                      style={[
+                        styles.iconCircle,
+                        { backgroundColor: task.iconBg },
+                      ]}>
+                      <Feather name={task.iconName} size={20} color="#fff" />
+                    </View>
+                    <View style={styles.rowText}>
+                      <Text style={styles.rowTitle}>{task.title}</Text>
+                      <Text style={styles.rowMeta}>{task.timeLabel}</Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.radioOuter,
+                        isOn && styles.radioOuterSelected,
+                      ]}>
+                      {isOn ? <View style={styles.radioInner} /> : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
 
           <View style={styles.footer}>
             <Pressable
@@ -140,18 +143,20 @@ export function CreateMissionCardModal({
             </Pressable>
             <Pressable
               onPress={() => onCreate([...selected])}
-              disabled={count === 0}
+              disabled={count === 0 || loading || Boolean(error)}
               style={({ pressed }) => [
                 styles.createBtn,
-                count === 0 && styles.createBtnDisabled,
-                pressed && count > 0 && styles.btnPressed,
+                (count === 0 || loading || Boolean(error)) &&
+                  styles.createBtnDisabled,
+                pressed && count > 0 && !loading && !error && styles.btnPressed,
               ]}>
               <Text
                 style={[
                   styles.createText,
-                  count === 0 && styles.createTextDisabled,
+                  (count === 0 || loading || Boolean(error)) &&
+                    styles.createTextDisabled,
                 ]}>
-                Create ({count})
+                {actionLabel} ({count})
               </Text>
             </Pressable>
           </View>
@@ -194,6 +199,26 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 20,
     paddingHorizontal: 8,
+  },
+  centerBlock: {
+    minHeight: 160,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: 12,
+  },
+  hint: {
+    marginTop: 12,
+    fontSize: 14,
+    textAlign: 'center',
+    color: 'rgba(58,45,42,0.48)',
+    lineHeight: 20,
+  },
+  errorText: {
+    fontSize: 14,
+    textAlign: 'center',
+    color: '#B85C5C',
+    lineHeight: 20,
   },
   list: {
     maxHeight: 320,

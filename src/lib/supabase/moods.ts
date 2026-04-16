@@ -5,6 +5,14 @@ export type SaveMoodToSupabaseResult =
   | { kind: 'saved' }
   | { kind: 'error'; message: string };
 
+function friendlyMoodSyncMessage(raw: string): string {
+  const m = raw.toLowerCase();
+  if (m.includes('row-level security') || m.includes('rls')) {
+    return 'Your mood is saved on this device, but it could not sync to your account yet. Check that you are signed in, then try again. If it keeps happening, your project admin may need to update database access for the moods table.';
+  }
+  return raw;
+}
+
 /**
  * Persists a mood row for the signed-in user. Guests / missing mood → skipped (no error).
  */
@@ -12,6 +20,18 @@ export async function saveMoodToSupabase(
   mood: string | null | undefined,
 ): Promise<SaveMoodToSupabaseResult> {
   const supabase = getSupabase();
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (session?.refresh_token) {
+    try {
+      await supabase.auth.refreshSession();
+    } catch {
+      // Continue; getUser() still reflects persisted session on device.
+    }
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -29,7 +49,7 @@ export async function saveMoodToSupabase(
   );
 
   if (error) {
-    return { kind: 'error', message: error.message };
+    return { kind: 'error', message: friendlyMoodSyncMessage(error.message) };
   }
   return { kind: 'saved' };
 }

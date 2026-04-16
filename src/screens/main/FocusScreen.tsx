@@ -1,11 +1,41 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Feather from 'react-native-vector-icons/Feather';
-import { EveCalTheme } from '../../theme/theme';
-import { Surface } from '../../components/Surface';
-import { GradientButton } from '../../components/GradientButton';
-import { TopHeader } from '../../components/TopHeader';
 import { CreateMissionCardModal } from '../../components/CreateMissionCardModal';
+import { GradientButton } from '../../components/GradientButton';
+import { Surface } from '../../components/Surface';
+import { TopHeader } from '../../components/TopHeader';
+import {
+  focusMissionTasksFingerprint,
+  loadFocusMissionTasksCache,
+  saveFocusMissionTasksCache,
+} from '../../lib/focus/focusMissionCache';
+import { getSupabase } from '../../lib/supabase/client';
+import {
+  addTasksToMission,
+  buildTodaysMissionShareText,
+  fetchTasksForMissionPicker,
+  fetchTodaysMissionTaskRows,
+  getOrCreateTodaysMission,
+  todayIsoDate,
+  type FocusMissionTaskRow,
+  type MissionTaskOption,
+} from '../../lib/supabase/missionsApi';
+import { EveCalTheme } from '../../theme/theme';
+
+const { height: windowHeight } = Dimensions.get('window');
 
 function FocusCard({
   iconColor,
@@ -23,7 +53,17 @@ function FocusCard({
   time: string;
 }) {
   return (
-    <Surface style={styles.card}>
+    <Surface
+      style={[
+        styles.card,
+        {
+          shadowColor: iconColor,
+          shadowOpacity: 0.24,
+          shadowRadius: 14,
+          shadowOffset: { width: 0, height: 8 },
+          elevation: 5,
+        },
+      ]}>
       <View style={[styles.cardIcon, { backgroundColor: iconColor }]}>
         <Feather name={iconName} size={22} color="#fff" />
       </View>
@@ -44,6 +84,163 @@ function FocusCard({
 
 export function FocusScreen() {
   const [missionModalVisible, setMissionModalVisible] = React.useState(false);
+  const [missionRows, setMissionRows] = React.useState<FocusMissionTaskRow[]>(
+    [],
+  );
+  const [listLoading, setListLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [listError, setListError] = React.useState<string | null>(null);
+
+  const [pickerTasks, setPickerTasks] = React.useState<MissionTaskOption[]>(
+    [],
+  );
+  const [pickerLoading, setPickerLoading] = React.useState(false);
+  const [pickerError, setPickerError] = React.useState<string | null>(null);
+
+  const lastFingerprintRef = React.useRef<string>('');
+  const missionRowCountRef = React.useRef(0);
+  const userIdRef = React.useRef<string | null>(null);
+
+  /** Today’s mission tasks are stored per user + calendar day (new day = new cache key). */
+  const hydrateFromLocalOnly = React.useCallback(async () => {
+    setListLoading(true);
+    setListError(null);
+
+    const {
+      data: { user },
+    } = await getSupabase().auth.getUser();
+
+    if (!user) {
+      userIdRef.current = null;
+      lastFingerprintRef.current = '';
+      missionRowCountRef.current = 0;
+      setMissionRows([]);
+      setListError('Not signed in');
+      setListLoading(false);
+      return;
+    }
+
+    userIdRef.current = user.id;
+    const date = todayIsoDate();
+    const cached = await loadFocusMissionTasksCache(user.id, date);
+
+    if (cached !== null) {
+      lastFingerprintRef.current = focusMissionTasksFingerprint(cached);
+      missionRowCountRef.current = cached.length;
+      setMissionRows(cached);
+      setListError(null);
+    } else {
+      lastFingerprintRef.current = '';
+      missionRowCountRef.current = 0;
+      setMissionRows([]);
+      setListError(null);
+    }
+
+    setListLoading(false);
+  }, []);
+
+  const refreshMissionTasksFromApi = React.useCallback(async () => {
+    const {
+      data: { user },
+    } = await getSupabase().auth.getUser();
+
+    if (!user) {
+      userIdRef.current = null;
+      setListError('Not signed in');
+      return;
+    }
+
+    userIdRef.current = user.id;
+    const date = todayIsoDate();
+    const { rows, error } = await fetchTodaysMissionTaskRows();
+
+    if (error) {
+      if (missionRowCountRef.current === 0) {
+        setMissionRows([]);
+        setListError(error);
+      }
+      return;
+    }
+
+    const fp = focusMissionTasksFingerprint(rows);
+    if (fp !== lastFingerprintRef.current) {
+      lastFingerprintRef.current = fp;
+      missionRowCountRef.current = rows.length;
+      setMissionRows(rows);
+      void saveFocusMissionTasksCache(user.id, date, rows);
+    }
+    setListError(null);
+  }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void hydrateFromLocalOnly();
+    }, [hydrateFromLocalOnly]),
+  );
+
+  const onPullRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    void (async () => {
+      await refreshMissionTasksFromApi();
+      setRefreshing(false);
+    })();
+  }, [refreshMissionTasksFromApi]);
+
+  const openMissionModal = React.useCallback(async () => {
+    setMissionModalVisible(true);
+    setPickerLoading(true);
+    setPickerError(null);
+    const excludeIds = missionRows.map(r => r.id);
+    const { tasks, error } = await fetchTasksForMissionPicker({
+      excludeTaskIds: excludeIds,
+    });
+    setPickerTasks(tasks);
+    setPickerError(error);
+    setPickerLoading(false);
+  }, [missionRows]);
+
+  const handleCreateMission = React.useCallback(
+    async (selectedIds: string[]) => {
+      if (selectedIds.length === 0) return;
+
+      const mission = await getOrCreateTodaysMission();
+      if (!mission.ok) {
+        Alert.alert('Could not save', mission.message);
+        return;
+      }
+
+      const linked = await addTasksToMission(mission.mission.id, selectedIds);
+      if (!linked.ok) {
+        Alert.alert('Could not add tasks', linked.message);
+        return;
+      }
+
+      setMissionModalVisible(false);
+      await refreshMissionTasksFromApi();
+    },
+    [refreshMissionTasksFromApi],
+  );
+
+  const modalMode = missionRows.length > 0 ? 'add' : 'create';
+  const buttonTitle =
+    missionRows.length > 0 ? 'Add tasks to mission' : 'Create Mission Card';
+
+  const shareTodaysMission = React.useCallback(async () => {
+    if (missionRows.length === 0) return;
+    const message = buildTodaysMissionShareText(missionRows);
+    try {
+      await Share.share({
+        message,
+        title: "Today's mission",
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      Alert.alert('Could not share', msg);
+    }
+  }, [missionRows]);
+
+  const canShareMission =
+    !listLoading && !listError && missionRows.length > 0;
 
   return (
     <View style={styles.root}>
@@ -52,46 +249,78 @@ export function FocusScreen() {
       <CreateMissionCardModal
         visible={missionModalVisible}
         onClose={() => setMissionModalVisible(false)}
-        onCreate={_selectedIds => {
-          setMissionModalVisible(false);
-          // TODO: share selected mission tasks with Cal / persist
-        }}
+        onCreate={handleCreateMission}
+        tasks={pickerTasks}
+        loading={pickerLoading}
+        error={pickerError}
+        mode={modalMode}
       />
       <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onPullRefresh}
+            tintColor={EveCalTheme.colors.premiumBrown}
+            colors={[EveCalTheme.colors.premiumBrown]}
+          />
+        }
+        contentContainerStyle={[
+          styles.scrollContent,
+          { minHeight: windowHeight * 0.88 },
+        ]}>
         <Text style={styles.kicker}>GENTLE GUIDANCE</Text>
         <Text style={styles.h1}>What Matters Now</Text>
 
-        <FocusCard
-          iconColor={EveCalTheme.colors.softBlue}
-          iconName="smile"
-          title="Timmy has soccer"
-          subtitle="Riverside Park, Field 3"
-          tag="Cal"
-          time="10:00 AM"
-        />
-        <FocusCard
-          iconColor={EveCalTheme.colors.softRose}
-          iconName="coffee"
-          title="Dinner: Pasta"
-          subtitle="New recipe to try"
-          tag="Eve"
-          time="6:00 PM"
-        />
-        <FocusCard
-          iconColor={EveCalTheme.colors.softSand}
-          iconName="dollar-sign"
-          title="Water bill due"
-          subtitle="Account #12345"
-          tag="Cal"
-          time="Today"
-        />
+        {listLoading ? (
+          <View style={styles.listState}>
+            <ActivityIndicator color={EveCalTheme.colors.premiumBrown} />
+          </View>
+        ) : listError ? (
+          <Text style={styles.listError}>{listError}</Text>
+        ) : missionRows.length === 0 ? (
+          <Text style={styles.emptyHint}>
+            No tasks on today's mission yet. Tap the button below to choose
+            what you want to focus on.
+            {'\n\n'}
+            Pull down to sync from the server.
+          </Text>
+        ) : (
+          missionRows.map(row => (
+            <FocusCard
+              key={row.id}
+              iconColor={row.iconColor}
+              iconName={row.iconName}
+              title={row.title}
+              subtitle={row.subtitle}
+              tag={row.tag}
+              time={row.time}
+            />
+          ))
+        )}
+
+        {canShareMission ? (
+          <Pressable
+            onPress={() => void shareTodaysMission()}
+            style={({ pressed }) => [
+              styles.shareRow,
+              pressed && styles.shareRowPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Share today's mission">
+            <Feather
+              name="share-2"
+              size={20}
+              color={EveCalTheme.colors.premiumBrown}
+            />
+            <Text style={styles.shareRowText}>Share today's mission</Text>
+          </Pressable>
+        ) : null}
 
         <GradientButton
-          title="Create Mission Card"
+          title={buttonTitle}
           iconName="send"
-          onPress={() => setMissionModalVisible(true)}
+          onPress={() => void openMissionModal()}
         />
 
         <Surface style={styles.quoteCard}>
@@ -107,7 +336,13 @@ export function FocusScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: EveCalTheme.colors.bg },
-  content: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 28, gap: 14 },
+  scrollContent: {
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 28,
+    gap: 14,
+    flexGrow: 1,
+  },
   kicker: {
     color: 'rgba(58,45,42,0.35)',
     letterSpacing: 2.6,
@@ -118,6 +353,43 @@ const styles = StyleSheet.create({
     color: EveCalTheme.colors.text,
     fontFamily: EveCalTheme.typography.serif,
     marginBottom: 4,
+  },
+  listState: {
+    paddingVertical: 28,
+    alignItems: 'center',
+  },
+  listError: {
+    color: '#B85C5C',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  emptyHint: {
+    color: EveCalTheme.colors.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
+  shareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderColor: 'rgba(58,45,42,0.28)',
+    backgroundColor: EveCalTheme.colors.card,
+  },
+  shareRowPressed: {
+    opacity: 0.88,
+  },
+  shareRowText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: EveCalTheme.colors.premiumBrown,
   },
   card: {
     padding: 16,
@@ -137,6 +409,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: EveCalTheme.colors.text,
     fontWeight: '600',
+    fontFamily: 'Inter',
   },
   cardSubtitle: {
     marginTop: 2,
@@ -166,4 +439,3 @@ const styles = StyleSheet.create({
     marginTop: -6,
   },
 });
-

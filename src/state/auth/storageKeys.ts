@@ -8,5 +8,7 @@ export const StorageKeys = {
   /** JSON: JournalEntry[] — free-form journal reflections */
   journalEntries: 'eveCal.journalEntries',
   settingsNotifications: 'eveCal.settings.notifications',
+  /** Last FCM registration token (debug / refresh flows). */
+  fcmToken: 'eveCal.fcmToken',
 } as const;
 

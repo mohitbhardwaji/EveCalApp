@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { JournalFcmOnFocus } from './JournalFcmOnFocus';
 import {
   createNativeStackNavigator,
   type NativeStackNavigationProp,
@@ -43,32 +44,38 @@ function JournalBootstrap() {
 
 export function JournalStackNavigator() {
   return (
-    <Stack.Navigator
-      initialRouteName="JournalBootstrap"
-      screenOptions={{ headerShown: false, animation: 'fade' }}>
-      <Stack.Screen name="JournalBootstrap" component={JournalBootstrap} />
-      <Stack.Screen name="JournalMain" component={JournalScreen} />
-      <Stack.Screen
-        name="JournalNewEntry"
-        component={JournalNewEntryScreen}
-        options={{
-          animation: 'slide_from_right',
-          gestureEnabled: true,
-        }}
-      />
-      <Stack.Screen
-        name="JournalAnchor"
-        component={JournalMoodCheckInScreen}
-        options={{
-          animation: 'slide_from_bottom',
-          gestureEnabled: false,
-        }}
-      />
-    </Stack.Navigator>
+    <View style={styles.stackWrap}>
+      <JournalFcmOnFocus />
+      <Stack.Navigator
+        initialRouteName="JournalBootstrap"
+        screenOptions={{ headerShown: false, animation: 'fade' }}>
+        <Stack.Screen name="JournalBootstrap" component={JournalBootstrap} />
+        <Stack.Screen name="JournalMain" component={JournalScreen} />
+        <Stack.Screen
+          name="JournalNewEntry"
+          component={JournalNewEntryScreen}
+          options={{
+            animation: 'slide_from_right',
+            gestureEnabled: true,
+          }}
+        />
+        <Stack.Screen
+          name="JournalAnchor"
+          component={JournalMoodCheckInScreen}
+          options={{
+            animation: 'slide_from_bottom',
+            gestureEnabled: false,
+          }}
+        />
+      </Stack.Navigator>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  stackWrap: {
+    flex: 1,
+  },
   bootstrap: {
     flex: 1,
     backgroundColor: EveCalTheme.colors.bg,

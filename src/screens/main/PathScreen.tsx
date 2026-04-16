@@ -1,21 +1,41 @@
 import React from 'react';
 import {
+  ActivityIndicator,
+  Dimensions,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
-  Dimensions,
-  ScrollView,
-  Pressable,
-  Platform,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useNavigation,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import { TopHeader } from '../../components/TopHeader';
-import type { PathStackParamList } from '../../navigation/types';
+import {
+  loadPathCategoriesCache,
+  pathCategoriesFingerprint,
+  savePathCategoriesCache,
+} from '../../lib/path/pathCategoriesCache';
+import { getSupabase } from '../../lib/supabase/client';
+import { fetchPathCategories, type PathCategorySummary } from '../../lib/supabase/tasksApi';
+import type { MainTabParamList, PathStackParamList } from '../../navigation/types';
+import {
+  PATH_CARD_ICONS,
+  PATH_CARD_KICKERS,
+  PATH_CARD_TINTS,
+} from '../../theme/pathCardVisuals';
 import { PathBackground } from './PathBackground';
+
+const POLL_MS = 5000;
 
 type PathNav = NativeStackNavigationProp<PathStackParamList, 'PathHome'>;
 
@@ -28,7 +48,8 @@ type CardAlignKey =
   | 'cardRight1'
   | 'cardLeft2'
   | 'cardRight2'
-  | 'cardLeft3';
+  | 'cardLeft3'
+  | 'cardRight3';
 
 const CARD_ALIGN: Record<CardAlignKey, ViewStyle> = {
   cardLeft1: { alignSelf: 'flex-start', marginLeft: H_MARGIN },
@@ -36,6 +57,7 @@ const CARD_ALIGN: Record<CardAlignKey, ViewStyle> = {
   cardLeft2: { alignSelf: 'flex-start', marginLeft: H_MARGIN },
   cardRight2: { alignSelf: 'flex-end', marginRight: H_MARGIN },
   cardLeft3: { alignSelf: 'flex-start', marginLeft: H_MARGIN },
+  cardRight3: { alignSelf: 'flex-end', marginRight: H_MARGIN },
 };
 
 function FloatingCard({
@@ -61,6 +83,10 @@ function FloatingCard({
       android_ripple={null}
       style={({ pressed }) => [
         styles.floatCard,
+        {
+          shadowColor: tint,
+          shadowOpacity: 0.24,
+        },
         Platform.OS === 'android' ? styles.floatCardAndroid : null,
         style,
         pressed && Platform.OS !== 'android' ? styles.cardPressed : null,
@@ -79,56 +105,128 @@ function FloatingCard({
   );
 }
 
-const CARDS = [
-  {
-    id: 'social-harmony',
-    title: 'Social Harmony',
-    count: 3,
-    tint: '#7DAFFF',
-    icon: 'users',
-    kicker: 'SACRED SPACE',
-    styleKey: 'cardLeft1',
-  },
-  {
-    id: 'daily-rituals',
-    title: 'Daily Rituals',
-    count: 5,
-    tint: '#E6C9A8',
-    icon: 'coffee',
-    kicker: 'SUSTENANCE',
-    styleKey: 'cardRight1',
-  },
-  {
-    id: 'core-peace',
-    title: 'Core Peace',
-    count: 2,
-    tint: '#A8D5BA',
-    icon: 'leaf',
-    kicker: 'SANCTUARY',
-    styleKey: 'cardLeft2',
-  },
-  {
-    id: 'home-base',
-    title: 'Home Base',
-    count: 7,
-    tint: '#E6C9A8',
-    icon: 'home',
-    kicker: 'FOUNDATION',
-    styleKey: 'cardRight2',
-  },
-  {
-    id: 'growth',
-    title: 'Growth',
-    count: 1,
-    tint: '#F4A6A6',
-    icon: 'heart',
-    kicker: 'EXPANSION',
-    styleKey: 'cardLeft3',
-  },
-] as const;
+const CARD_STYLE_KEYS: CardAlignKey[] = [
+  'cardLeft1',
+  'cardRight1',
+  'cardLeft2',
+  'cardRight2',
+  'cardLeft3',
+  'cardRight3',
+];
 
 export function PathScreen() {
   const navigation = useNavigation<PathNav>();
+  const tabNavigation =
+    navigation.getParent<BottomTabNavigationProp<MainTabParamList>>();
+  const [categories, setCategories] = React.useState<PathCategorySummary[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const lastFingerprintRef = React.useRef<string>('');
+  const userIdRef = React.useRef<string | null>(null);
+  const categoriesLenRef = React.useRef(0);
+
+  React.useEffect(() => {
+    categoriesLenRef.current = categories.length;
+  }, [categories.length]);
+
+  const applyFetchResult = React.useCallback(
+    (result: Awaited<ReturnType<typeof fetchPathCategories>>) => {
+      if (result.ok) {
+        const fp = pathCategoriesFingerprint(result.categories);
+        if (fp === lastFingerprintRef.current) {
+          return;
+        }
+        lastFingerprintRef.current = fp;
+        setCategories(result.categories);
+        setError(null);
+        const uid = userIdRef.current;
+        if (uid) {
+          void savePathCategoriesCache(uid, result.categories);
+        }
+        return;
+      }
+
+      if (categoriesLenRef.current === 0) {
+        setCategories([]);
+        setError(result.message);
+      }
+    },
+    [],
+  );
+
+  const runFetch = React.useCallback(async () => {
+    return fetchPathCategories();
+  }, []);
+
+  const onPullRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    void (async () => {
+      const result = await runFetch();
+      applyFetchResult(result);
+      setRefreshing(false);
+    })();
+  }, [applyFetchResult, runFetch]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      let cancelled = false;
+
+      void (async () => {
+        const {
+          data: { user },
+        } = await getSupabase().auth.getUser();
+        if (cancelled) return;
+
+        if (!user) {
+          userIdRef.current = null;
+          lastFingerprintRef.current = '';
+          setCategories([]);
+          setError('Not signed in');
+          setLoading(false);
+          return;
+        }
+
+        userIdRef.current = user.id;
+
+        const cached = await loadPathCategoriesCache(user.id);
+        if (cancelled) return;
+
+        if (cached !== null) {
+          const fp = pathCategoriesFingerprint(cached);
+          lastFingerprintRef.current = fp;
+          setCategories(cached);
+          setError(null);
+          setLoading(false);
+        }
+
+        const result = await runFetch();
+        if (cancelled) return;
+        applyFetchResult(result);
+        setLoading(false);
+      })();
+
+      const poll = setInterval(() => {
+        if (cancelled) return;
+        void runFetch().then(result => {
+          if (!cancelled) {
+            applyFetchResult(result);
+          }
+        });
+      }, POLL_MS);
+
+      return () => {
+        cancelled = true;
+        clearInterval(poll);
+      };
+    }, [applyFetchResult, runFetch]),
+  );
+
+  const showInitialLoader = loading && categories.length === 0;
+  const showCardList = categories.length > 0 && !error;
+  const showTallScrollForRefresh =
+    !showInitialLoader && !showCardList;
 
   return (
     <View style={styles.root}>
@@ -140,28 +238,78 @@ export function PathScreen() {
 
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}>
-          {CARDS.map(card => (
-            <FloatingCard
-              key={card.id}
-              title={card.title}
-              count={card.count}
-              tint={card.tint}
-              icon={card.icon}
-              kicker={card.kicker}
-              style={CARD_ALIGN[card.styleKey as CardAlignKey]}
-              onPress={() =>
-                navigation.navigate('TaskList', {
-                  categoryId: card.id,
-                  title: card.title,
-                  kicker: card.kicker,
-                  tint: card.tint,
-                  icon: card.icon,
-                  taskCount: card.count,
-                })
-              }
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onPullRefresh}
+              tintColor="#6BA3D6"
+              colors={['#6BA3D6']}
             />
-          ))}
+          }
+          contentContainerStyle={[
+            styles.refreshScrollContent,
+            showInitialLoader && styles.refreshScrollContentLoading,
+            showCardList && styles.scrollContent,
+            showTallScrollForRefresh && styles.refreshScrollContentTall,
+          ]}>
+          {loading && categories.length === 0 ? (
+            <View style={[styles.stateCenter, styles.stateCenterCompact]}>
+              <View style={styles.loaderOrb}>
+                <ActivityIndicator size="large" color="#6BA3D6" />
+              </View>
+              <Text style={styles.stateTitle}>Gathering your paths</Text>
+              <Text style={styles.stateSub}>Creating your calm workspace...</Text>
+            </View>
+          ) : !error && categories.length === 0 ? (
+            <View style={styles.stateCenter}>
+              <Text style={styles.stateTitle}>Let&apos;s get started</Text>
+              <Text style={styles.stateSub}>
+                Add your first capture and categories will appear here.
+              </Text>
+              <Pressable
+                onPress={() => tabNavigation?.navigate('Capture')}
+                style={({ pressed }) => [
+                  styles.stateButton,
+                  pressed && styles.stateButtonPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Go to capture">
+                <Feather name="mic" size={16} color="#fff" />
+                <Text style={styles.stateButtonText}>Go to Capture</Text>
+              </Pressable>
+            </View>
+          ) : error ? (
+            <View style={styles.stateCenter}>
+              <Text style={styles.stateTitle}>Could not load paths</Text>
+              <Text style={styles.stateSub}>{error}</Text>
+            </View>
+          ) : (
+            <>
+              {categories.map((card, index) => (
+                <FloatingCard
+                  key={card.id}
+                  title={card.name}
+                  count={card.taskCount}
+                  tint={PATH_CARD_TINTS[index % PATH_CARD_TINTS.length]}
+                  icon={PATH_CARD_ICONS[index % PATH_CARD_ICONS.length]}
+                  kicker={PATH_CARD_KICKERS[index % PATH_CARD_KICKERS.length]}
+                  style={
+                    CARD_ALIGN[CARD_STYLE_KEYS[index % CARD_STYLE_KEYS.length]]
+                  }
+                  onPress={() =>
+                    navigation.navigate('TaskList', {
+                      categoryId: card.id,
+                      title: card.name,
+                      kicker: PATH_CARD_KICKERS[index % PATH_CARD_KICKERS.length],
+                      tint: PATH_CARD_TINTS[index % PATH_CARD_TINTS.length],
+                      icon: PATH_CARD_ICONS[index % PATH_CARD_ICONS.length],
+                      taskCount: card.taskCount,
+                    })
+                  }
+                />
+              ))}
+            </>
+          )}
         </ScrollView>
       </View>
     </View>
@@ -184,6 +332,17 @@ const styles = StyleSheet.create({
     position: 'relative',
     zIndex: 0,
   },
+  refreshScrollContent: {
+    flexGrow: 1,
+  },
+  refreshScrollContentLoading: {
+    minHeight: height * 0.85,
+    justifyContent: 'center',
+  },
+  refreshScrollContentTall: {
+    minHeight: height * 0.92,
+    justifyContent: 'center',
+  },
   scrollContent: {
     flexGrow: 1,
     paddingTop: 20,
@@ -191,17 +350,75 @@ const styles = StyleSheet.create({
     gap: 34,
     minHeight: height * 1.15,
   },
+  stateCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 26,
+    gap: 10,
+  },
+  stateCenterCompact: {
+    flex: 0,
+    alignSelf: 'center',
+    marginTop: height * 0.28,
+  },
+  loaderOrb: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(107,163,214,0.26)',
+    shadowColor: '#6BA3D6',
+    shadowOpacity: 0.22,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 22,
+    elevation: 3,
+  },
+  stateTitle: {
+    marginTop: 8,
+    fontSize: 22,
+    color: '#3A2D2A',
+    fontFamily: 'Times New Roman',
+  },
+  stateSub: {
+    textAlign: 'center',
+    color: 'rgba(58,45,42,0.62)',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  stateButton: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    backgroundColor: '#6BA3D6',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  stateButtonPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
+  },
+  stateButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
 
   floatCard: {
     width: CARD_WIDTH,
     padding: 20,
     borderRadius: 28,
     backgroundColor: '#fff',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.82)',
+    elevation: 5,
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 24,
   },
   /** Android: softer card — less elevation “outline” / pressed halo */
   floatCardAndroid: {
