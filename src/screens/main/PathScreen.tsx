@@ -96,7 +96,9 @@ function FloatingCard({
       </View>
 
       <Text style={styles.floatKicker}>{kicker}</Text>
-      <Text style={styles.floatTitle}>{title}</Text>
+      <Text style={styles.floatTitle} numberOfLines={2}>
+        {title}
+      </Text>
 
       <View style={[styles.badge, { backgroundColor: tint }]}>
         <Text style={styles.badgeText}>{count}</Text>
@@ -411,8 +413,9 @@ const styles = StyleSheet.create({
 
   floatCard: {
     width: CARD_WIDTH,
-    padding: 20,
-    borderRadius: 28,
+    paddingVertical: 20,
+    paddingHorizontal: 18,
+    borderRadius: 32,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.82)',
@@ -432,23 +435,26 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
   },
   floatIcon: {
-    height: 46,
-    width: 46,
-    borderRadius: 15,
-    marginBottom: 14,
+    height: 54,
+    width: 54,
+    borderRadius: 18,
+    marginBottom: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   floatKicker: {
-    fontSize: 9,
-    letterSpacing: 2,
-    color: '#999',
+    fontSize: 10,
+    color: 'rgba(186,166,154,0.95)',
+    lineHeight: 14,
+    letterSpacing: 0.1,
   },
   floatTitle: {
-    fontSize: 28,
-    color: '#333',
+    fontSize: 14,
+    fontFamily: 'Inter',
+    color: 'rgba(71, 59, 56, 0.81)',
+    fontWeight: '500',
+    lineHeight: 24,
   },
-
   badge: {
     position: 'absolute',
     top: -8,

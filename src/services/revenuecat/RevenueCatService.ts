@@ -4,9 +4,11 @@ import Purchases, {
   PurchasesError,
   PurchasesStoreProduct,
 } from 'react-native-purchases';
+import { Platform } from 'react-native';
 import {
   PRO_ENTITLEMENT_ID,
-  REVENUECAT_API_KEY,
+  REVENUECAT_ANDROID_API_KEY,
+  REVENUECAT_IOS_API_KEY,
   REVENUECAT_PRODUCT_IDS,
 } from '../../config/revenuecat';
 
@@ -16,33 +18,27 @@ export type RcPurchaseResult =
 
 class RevenueCatService {
   private configured = false;
-  private configuredAppUserId: string | null = null;
 
-  async configure(appUserId: string | null): Promise<void> {
-    if (
-      this.configured &&
-      (this.configuredAppUserId ?? null) === (appUserId ?? null)
-    ) {
+  async configure(): Promise<void> {
+    if (this.configured) {
       return;
     }
 
-    Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN);
+    Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.VERBOSE : LOG_LEVEL.WARN);
+    const apiKey =
+      Platform.OS === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY;
     await Purchases.configure({
-      apiKey: REVENUECAT_API_KEY,
-      appUserID: appUserId ?? undefined,
+      apiKey,
     });
     this.configured = true;
-    this.configuredAppUserId = appUserId ?? null;
   }
 
   async logIn(appUserId: string): Promise<void> {
     await Purchases.logIn(appUserId);
-    this.configuredAppUserId = appUserId;
   }
 
   async logOut(): Promise<void> {
     await Purchases.logOut();
-    this.configuredAppUserId = null;
   }
 
   async getCustomerInfo(): Promise<CustomerInfo> {

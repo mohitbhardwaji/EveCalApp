@@ -98,6 +98,7 @@ function EveCalTabBar({
 export function MainTabs() {
   return (
     <Tab.Navigator
+      initialRouteName="Capture"
       screenOptions={{
         headerShown: false,
       }}
@@ -136,20 +137,22 @@ const styles = StyleSheet.create({
   },
   bar: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 6,
+    justifyContent: 'space-between',
+    alignItems: 'stretch',
+    paddingHorizontal: 0,
     paddingTop: 4,
     paddingBottom: 6,
   },
   tab: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 74,
     paddingVertical: 2,
   },
   item: {
     height: 66,
-    width: 84,
+    width: '100%',
+    maxWidth: 84,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',

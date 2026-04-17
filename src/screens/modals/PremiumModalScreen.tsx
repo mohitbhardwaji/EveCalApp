@@ -14,10 +14,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { PremiumSparkleIcon } from '../../components/premium/PremiumSparkleIcon';
-import { isPremiumUser } from '../../lib/premium';
+import { getTrialDaysRemaining, isPremiumUser, isTrialExpired } from '../../lib/premium';
 import type { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../state/auth/AuthContext';
-import { presentProPaywall } from '../../services/revenuecat/revenueCatUi';
+import { presentPaywall } from '../../services/revenuecat/revenueCatUi';
 import { useSubscription } from '../../state/subscription/SubscriptionContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Premium'>;
@@ -139,6 +139,8 @@ export function PremiumModalScreen({ navigation }: Props) {
   const { isPro, refresh } = useSubscription();
   const [plan, setPlan] = React.useState<'monthly' | 'yearly'>('yearly');
   const [ctaLoading, setCtaLoading] = React.useState(false);
+  const trialExpired = isTrialExpired(user, userData);
+  const trialDaysRemaining = getTrialDaysRemaining(user, userData);
 
   const dismissAllowEntry = React.useCallback(async () => {
     await markPremiumSeen();
@@ -147,18 +149,22 @@ export function PremiumModalScreen({ navigation }: Props) {
 
   const handleClose = React.useCallback(async () => {
     const strictNonPremiumPaywall =
-      user != null && !isPremiumUser(userData) && !isPro;
+      user != null && !isPremiumUser(userData) && !isPro && trialExpired;
     if (strictNonPremiumPaywall) {
       await signOut();
       return;
     }
     await dismissAllowEntry();
-  }, [dismissAllowEntry, signOut, user, userData]);
+  }, [dismissAllowEntry, isPro, signOut, trialExpired, user, userData]);
+
+  const handleContinueTrial = React.useCallback(async () => {
+    await dismissAllowEntry();
+  }, [dismissAllowEntry]);
 
   const handleStartTrial = React.useCallback(async () => {
     setCtaLoading(true);
     try {
-      const { unlocked } = await presentProPaywall();
+      const { unlocked } = await presentPaywall();
       await refresh();
       if (unlocked) {
         await dismissAllowEntry();
@@ -173,19 +179,24 @@ export function PremiumModalScreen({ navigation }: Props) {
 
   return (
     <View style={styles.backdrop}>
-      <Pressable style={StyleSheet.absoluteFillObject} onPress={handleClose} />
+      <Pressable
+        style={StyleSheet.absoluteFillObject}
+        onPress={trialExpired ? undefined : handleClose}
+      />
       <SafeAreaView style={styles.sheetSafe} edges={['top', 'bottom']}>
         <View style={styles.sheet}>
           <View style={styles.headerRow}>
             <Text style={styles.headerBrand}>Eve&Cal Premium</Text>
-            <Pressable
-              onPress={handleClose}
-              hitSlop={14}
-              style={styles.headerClose}
-              accessibilityRole="button"
-              accessibilityLabel="Close">
-              <Feather name="x" size={24} color={C.text} />
-            </Pressable>
+            {trialExpired ? null : (
+              <Pressable
+                onPress={handleClose}
+                hitSlop={14}
+                style={styles.headerClose}
+                accessibilityRole="button"
+                accessibilityLabel="Close">
+                <Feather name="x" size={24} color={C.text} />
+              </Pressable>
+            )}
           </View>
 
           <ScrollView
@@ -198,7 +209,9 @@ export function PremiumModalScreen({ navigation }: Props) {
               Your peace of mind, fully supported.
             </Text>
             <Text style={styles.subhead}>
-              Less mental load, more presence.
+              {trialExpired
+                ? 'Your 7-day trial ended. Subscribe to continue using the app.'
+                : `Less mental load, more presence. ${trialDaysRemaining} day${trialDaysRemaining === 1 ? '' : 's'} left in your free trial.`}
             </Text>
 
             <View style={styles.plansBlock}>
@@ -241,9 +254,20 @@ export function PremiumModalScreen({ navigation }: Props) {
               {ctaLoading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.ctaText}>Continue with RevenueCat</Text>
+                <Text style={styles.ctaText}>Get Subscription</Text>
               )}
             </Pressable>
+
+            {!trialExpired ? (
+              <Pressable
+                onPress={handleContinueTrial}
+                style={({ pressed }) => [
+                  styles.trialBtn,
+                  pressed && styles.trialBtnPressed,
+                ]}>
+                <Text style={styles.trialBtnText}>Continue 7-day trial</Text>
+              </Pressable>
+            ) : null}
 
             <Text style={styles.finePrint}>
               7-day free trial • Cancel anytime
@@ -524,6 +548,26 @@ const styles = StyleSheet.create({
   },
   ctaBtnDisabled: {
     opacity: 0.75,
+  },
+  trialBtn: {
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(90, 77, 65, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+  },
+  trialBtnPressed: {
+    opacity: 0.9,
+  },
+  trialBtnText: {
+    color: C.text,
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 0.1,
+    fontFamily: FONT_SANS,
   },
   ctaText: {
     color: '#FFFFFF',

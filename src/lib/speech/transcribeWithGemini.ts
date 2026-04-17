@@ -12,14 +12,17 @@ const DEVANAGARI_REGEX = /[\u0900-\u097F]/;
 
 function resolveGeminiApiKey(): string {
   const envKey = (GEMINI_API_KEY ?? '').trim();
+  const bundledKey = (GEMINI_API_KEY_BUNDLED ?? '').trim();
 
   // Valid Google API keys start with AIza. Prefer .env in dev; Android release often
   // has no bundled .env — same bundled key as iOS via `geminiKey.ts`.
   if (envKey.startsWith('AIza')) {
     return envKey;
   }
-
-  return GEMINI_API_KEY_BUNDLED;
+  if (bundledKey.startsWith('AIza')) {
+    return bundledKey;
+  }
+  return '';
 }
 
 async function generateTextWithGemini(
@@ -111,6 +114,18 @@ type GeminiGenerateResponse = {
   promptFeedback?: { blockReason?: string };
 };
 
+const CAPTURE_SEGMENT_INSTRUCTION = `You are a real-time speech transcription engine. This audio is ONE segment only (speech up to a natural pause).
+
+Rules:
+- Output a verbatim transcript only. Do not summarize, interpret, rephrase, or add commentary.
+- Preserve natural sentence structure and punctuation where clear from speech.
+- Do not merge with any prior context; treat this clip as a standalone utterance.
+- No timestamps, labels, quotes, or meta text—only the transcribed words.
+- If the clip contains only silence or unintelligible noise, respond with an empty string (no words).
+- Otherwise transcribe continuously: include filler (um, uh) when they sound like part of natural speech; omit them only when they are clearly isolated low-confidence noise and there is no other speech.
+
+Reply with ONLY the transcript text, or nothing if there is no speech.`;
+
 /**
  * Multilingual transcription via Gemini (inline audio). Key: `GEMINI_API_KEY` in `.env`
  * if set, else `GEMINI_API_KEY_BUNDLED` in `src/config/geminiKey.ts` (iOS + Android).
@@ -164,6 +179,57 @@ export async function transcribeAudioWithGemini(
       text = await transliterateToLatin(key, text);
     }
 
+    return { ok: true, text };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      message: `Could not process speech right now: ${msg}`,
+    };
+  }
+}
+
+/**
+ * Verbatim segmented capture: one clip per pause-bound segment, no post-processing
+ * beyond what the model returns. Empty string means no speech (caller should drop segment).
+ */
+export async function transcribeCaptureSegmentWithGemini(
+  filePath: string,
+): Promise<TranscribeResult> {
+  const key = resolveGeminiApiKey();
+  if (!key) {
+    return {
+      ok: false,
+      message:
+        'Speech-to-text is not configured yet. Restart the app after updating your local setup, or type your note manually.',
+    };
+  }
+
+  let base64: string;
+  try {
+    base64 = await fileUriToBase64(filePath);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      message: `Could not read the recording: ${msg}`,
+    };
+  }
+
+  try {
+    const json = await generateTextWithGemini(key, [
+      {
+        inlineData: {
+          mimeType: recordingMimeType(),
+          data: base64,
+        },
+      },
+      {
+        text: CAPTURE_SEGMENT_INSTRUCTION,
+      },
+    ]);
+
+    const text = extractTextFromGeminiResponse(json);
     return { ok: true, text };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

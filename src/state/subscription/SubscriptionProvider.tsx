@@ -39,7 +39,8 @@ export function SubscriptionProvider({
     void (async () => {
       setLoading(true);
       try {
-        await revenueCatService.configure(appUserId);
+        await revenueCatService.configure();
+        // Critical mapping: RevenueCat app_user_id == Supabase user.id
         if (prevUserId && appUserId == null) {
           await revenueCatService.logOut();
         } else if (appUserId && appUserId !== prevUserId) {

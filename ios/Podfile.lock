@@ -26,34 +26,12 @@ PODS:
   - FBLazyVector (0.84.1)
   - Firebase/CoreOnly (12.10.0):
     - FirebaseCore (~> 12.10.0)
-  - Firebase/Messaging (12.10.0):
-    - Firebase/CoreOnly
-    - FirebaseMessaging (~> 12.10.0)
   - FirebaseCore (12.10.0):
     - FirebaseCoreInternal (~> 12.10.0)
     - GoogleUtilities/Environment (~> 8.1)
     - GoogleUtilities/Logger (~> 8.1)
-  - FirebaseCoreExtension (12.10.0):
-    - FirebaseCore (~> 12.10.0)
   - FirebaseCoreInternal (12.10.0):
     - "GoogleUtilities/NSData+zlib (~> 8.1)"
-  - FirebaseInstallations (12.10.0):
-    - FirebaseCore (~> 12.10.0)
-    - GoogleUtilities/Environment (~> 8.1)
-    - GoogleUtilities/UserDefaults (~> 8.1)
-    - PromisesObjC (~> 2.4)
-  - FirebaseMessaging (12.10.0):
-    - FirebaseCore (~> 12.10.0)
-    - FirebaseInstallations (~> 12.10.0)
-    - GoogleDataTransport (~> 10.1)
-    - GoogleUtilities/AppDelegateSwizzler (~> 8.1)
-    - GoogleUtilities/Environment (~> 8.1)
-    - GoogleUtilities/Reachability (~> 8.1)
-    - GoogleUtilities/UserDefaults (~> 8.1)
-    - nanopb (~> 3.30910.0)
-  - GoogleDataTransport (10.1.0):
-    - nanopb (~> 3.30910.0)
-    - PromisesObjC (~> 2.4)
   - GoogleUtilities (8.1.0):
     - GoogleUtilities/AppDelegateSwizzler (= 8.1.0)
     - GoogleUtilities/Environment (= 8.1.0)
@@ -97,12 +75,52 @@ PODS:
   - hermes-engine (250829098.0.9):
     - hermes-engine/Pre-built (= 250829098.0.9)
   - hermes-engine/Pre-built (250829098.0.9)
-  - nanopb (3.30910.0):
-    - nanopb/decode (= 3.30910.0)
-    - nanopb/encode (= 3.30910.0)
-  - nanopb/decode (3.30910.0)
-  - nanopb/encode (3.30910.0)
-  - PromisesObjC (2.4.0)
+  - OneSignalXCFramework (5.5.0):
+    - OneSignalXCFramework/OneSignalComplete (= 5.5.0)
+  - OneSignalXCFramework/OneSignal (5.5.0):
+    - OneSignalXCFramework/OneSignalCore
+    - OneSignalXCFramework/OneSignalExtension
+    - OneSignalXCFramework/OneSignalLiveActivities
+    - OneSignalXCFramework/OneSignalNotifications
+    - OneSignalXCFramework/OneSignalOSCore
+    - OneSignalXCFramework/OneSignalOutcomes
+    - OneSignalXCFramework/OneSignalUser
+  - OneSignalXCFramework/OneSignalComplete (5.5.0):
+    - OneSignalXCFramework/OneSignal
+    - OneSignalXCFramework/OneSignalInAppMessages
+    - OneSignalXCFramework/OneSignalLocation
+  - OneSignalXCFramework/OneSignalCore (5.5.0)
+  - OneSignalXCFramework/OneSignalExtension (5.5.0):
+    - OneSignalXCFramework/OneSignalCore
+    - OneSignalXCFramework/OneSignalOutcomes
+  - OneSignalXCFramework/OneSignalInAppMessages (5.5.0):
+    - OneSignalXCFramework/OneSignalCore
+    - OneSignalXCFramework/OneSignalNotifications
+    - OneSignalXCFramework/OneSignalOSCore
+    - OneSignalXCFramework/OneSignalOutcomes
+    - OneSignalXCFramework/OneSignalUser
+  - OneSignalXCFramework/OneSignalLiveActivities (5.5.0):
+    - OneSignalXCFramework/OneSignalCore
+    - OneSignalXCFramework/OneSignalOSCore
+    - OneSignalXCFramework/OneSignalUser
+  - OneSignalXCFramework/OneSignalLocation (5.5.0):
+    - OneSignalXCFramework/OneSignalCore
+    - OneSignalXCFramework/OneSignalNotifications
+    - OneSignalXCFramework/OneSignalOSCore
+    - OneSignalXCFramework/OneSignalUser
+  - OneSignalXCFramework/OneSignalNotifications (5.5.0):
+    - OneSignalXCFramework/OneSignalCore
+    - OneSignalXCFramework/OneSignalExtension
+    - OneSignalXCFramework/OneSignalOutcomes
+  - OneSignalXCFramework/OneSignalOSCore (5.5.0):
+    - OneSignalXCFramework/OneSignalCore
+  - OneSignalXCFramework/OneSignalOutcomes (5.5.0):
+    - OneSignalXCFramework/OneSignalCore
+  - OneSignalXCFramework/OneSignalUser (5.5.0):
+    - OneSignalXCFramework/OneSignalCore
+    - OneSignalXCFramework/OneSignalNotifications
+    - OneSignalXCFramework/OneSignalOSCore
+    - OneSignalXCFramework/OneSignalOutcomes
   - PurchasesHybridCommon (18.0.0):
     - RevenueCat (= 5.67.2)
   - PurchasesHybridCommonUI (18.0.0):
@@ -1527,6 +1545,29 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - react-native-onesignal (5.4.3):
+    - hermes-engine
+    - OneSignalXCFramework (= 5.5.0)
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - react-native-safe-area-context (5.7.0):
     - hermes-engine
     - RCTRequired
@@ -2009,31 +2050,6 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - RNFBMessaging (24.0.0):
-    - Firebase/Messaging (= 12.10.0)
-    - FirebaseCoreExtension
-    - hermes-engine
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-Core-prebuilt
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-jsi
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - ReactNativeDependencies
-    - RNFBApp
-    - Yoga
   - RNFS (2.20.0):
     - React-Core
   - RNGestureHandler (2.30.0):
@@ -2058,11 +2074,6 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - RNNotifee (9.1.8):
-    - React-Core
-    - RNNotifee/NotifeeCore (= 9.1.8)
-  - RNNotifee/NotifeeCore (9.1.8):
-    - React-Core
   - RNPaywalls (10.0.0):
     - PurchasesHybridCommonUI (= 18.0.0)
     - React-Core
@@ -2230,6 +2241,7 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-image-picker (from `../node_modules/react-native-image-picker`)
+  - react-native-onesignal (from `../node_modules/react-native-onesignal`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-networking (from `../node_modules/react-native/ReactCommon/react/networking`)
@@ -2267,10 +2279,8 @@ DEPENDENCIES:
   - ReactNativeDependencies (from `../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
   - RNAudioRecorderPlayer (from `../node_modules/react-native-audio-recorder-player`)
   - "RNFBApp (from `../node_modules/@react-native-firebase/app`)"
-  - "RNFBMessaging (from `../node_modules/@react-native-firebase/messaging`)"
   - RNFS (from `../node_modules/react-native-fs`)
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
-  - "RNNotifee (from `../node_modules/@notifee/react-native`)"
   - RNPaywalls (from `../node_modules/react-native-purchases-ui`)
   - RNPurchases (from `../node_modules/react-native-purchases`)
   - RNScreens (from `../node_modules/react-native-screens`)
@@ -2282,14 +2292,9 @@ SPEC REPOS:
   trunk:
     - Firebase
     - FirebaseCore
-    - FirebaseCoreExtension
     - FirebaseCoreInternal
-    - FirebaseInstallations
-    - FirebaseMessaging
-    - GoogleDataTransport
     - GoogleUtilities
-    - nanopb
-    - PromisesObjC
+    - OneSignalXCFramework
     - PurchasesHybridCommon
     - PurchasesHybridCommonUI
     - RevenueCat
@@ -2379,6 +2384,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   react-native-image-picker:
     :path: "../node_modules/react-native-image-picker"
+  react-native-onesignal:
+    :path: "../node_modules/react-native-onesignal"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
   React-NativeModulesApple:
@@ -2453,14 +2460,10 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-audio-recorder-player"
   RNFBApp:
     :path: "../node_modules/@react-native-firebase/app"
-  RNFBMessaging:
-    :path: "../node_modules/@react-native-firebase/messaging"
   RNFS:
     :path: "../node_modules/react-native-fs"
   RNGestureHandler:
     :path: "../node_modules/react-native-gesture-handler"
-  RNNotifee:
-    :path: "../node_modules/@notifee/react-native"
   RNPaywalls:
     :path: "../node_modules/react-native-purchases-ui"
   RNPurchases:
@@ -2480,15 +2483,10 @@ SPEC CHECKSUMS:
   FBLazyVector: e97c19a5a442429d1988f182a1940fb08df514da
   Firebase: 99f203d3a114c6ba591f3b32263a9626e450af65
   FirebaseCore: f4428e22415ea3b3eca652c2098413dabf2a23a9
-  FirebaseCoreExtension: 3473a6ec16a91aee29fb75994a86c0220d2cddf3
   FirebaseCoreInternal: e7bbaeb00ab73011298f35ed223aa7371e212948
-  FirebaseInstallations: 047343aa91fd6a1ebfa3eb374ddecf36a8aaddfd
-  FirebaseMessaging: ed18fb50634e6e85b5d3e77e628c21e2c928cc53
-  GoogleDataTransport: aae35b7ea0c09004c3797d53c8c41f66f219d6a7
   GoogleUtilities: 00c88b9a86066ef77f0da2fab05f65d7768ed8e1
-  hermes-engine: e20ce133639cca7af85c00624e4a022851ddc78e
-  nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
-  PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
+  hermes-engine: f566d1252fdb163b94d935c6c3b192308d962db8
+  OneSignalXCFramework: 943852e7d70d719f73e9669d48620aeec1b93022
   PurchasesHybridCommon: 5905e1b6e8a650e90ba7a27ee190df551a82db76
   PurchasesHybridCommonUI: ca78e4b2b061a10bdb8f250ea80d143814d4a6a4
   RCTDeprecation: af44b104091a34482596cd9bd7e8d90c4e9b4bd7
@@ -2499,7 +2497,7 @@ SPEC CHECKSUMS:
   React: 1ba7d364ade7d883a1ec055bfc3606f35fdee17b
   React-callinvoker: bc2a26f8d84fb01f003fc6de6c9337b64715f95b
   React-Core: 7840d3a80b43a95c5e80ef75146bd70925ebab0f
-  React-Core-prebuilt: 85173a100c40e574d35aa90812fcc1bd8c099af4
+  React-Core-prebuilt: c3ea08bb21403437d896d277888736ce91b91172
   React-CoreModules: 2eb010400b63b89e53a324ffb3c112e4c7c3ce42
   React-cxxreact: a558e92199d26f145afa9e62c4233cf8e7950efe
   React-debug: 755200a6e7f5e6e0a40ff8d215493d43cce285fc
@@ -2528,6 +2526,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: f4ee8c62e0ef8359d139124f35a471518a172cd3
   React-microtasksnativemodule: d1956f0eec54c619b63a379520fb4c618a55ccb9
   react-native-image-picker: 48d850454b4a389753053e1d7378b624d3b47d77
+  react-native-onesignal: dc0212667c92798d90a72316aec304f9df6dddc4
   react-native-safe-area-context: ae7587b95fb580d1800c5b0b2a7bd48c2868e67a
   React-NativeModulesApple: 5ba0903927f6b8d335a091700e9fda143980f819
   React-networking: 3a4b7f9ed2b2d1c0441beacb79674323a24bcca6
@@ -2562,15 +2561,13 @@ SPEC CHECKSUMS:
   ReactAppDependencyProvider: e96e93b493d8d86eeaee3e590ba0be53f6abe46f
   ReactCodegen: 797de5178718324c6eba3327b07f9a423fbd5787
   ReactCommon: 07572bf9e687c8a52fbe4a3641e9e3a1a477c78e
-  ReactNativeDependencies: ed6f7e92696dee0e3e4517c57af23f69f5d7f7d2
+  ReactNativeDependencies: fb9679657bc380cbfd126c7aff9416c5b0ca3e73
   RevenueCat: 98177fc8a596e55a62b109c37e6d35f0132b4309
   RevenueCatUI: 736c4265528bb008d201cecc116da600a838390a
   RNAudioRecorderPlayer: b5ed41ccfe72a211a870bfe09ab36c046eb27d2a
   RNFBApp: fdc22fcdb61b16877dfcee623a29cd1107dde01a
-  RNFBMessaging: 1b0ed6e3963b9b32b340286130542097e01f5a33
   RNFS: 89de7d7f4c0f6bafa05343c578f61118c8282ed8
   RNGestureHandler: 07de6f059e0ee5744ae9a56feb07ee345338cc31
-  RNNotifee: 5e3b271e8ea7456a36eec994085543c9adca9168
   RNPaywalls: e17f3391ba6fdeb9df511e12e6434d84973bb464
   RNPurchases: d4235a3885e5482d9e20b67d5f93cec4cb27c10d
   RNScreens: 6cb648bdad8fe9bee9259fe144df95b6d1d5b707

@@ -1,12 +1,12 @@
 import React from 'react';
 import { View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import FCMService from '../services/FCMService';
+import OneSignalService from '../services/OneSignalService';
 import { useAuth } from '../state/auth/AuthContext';
 
 /**
- * Registers FCM (permission, token, handlers, Supabase `user_devices`) the first time a
- * signed-in user lands on the Journal tab — including cold start when Journal is the default tab.
+ * Bootstraps OneSignal (permission + listeners + token sync) the first time a signed-in user
+ * lands on the Journal tab — including cold start when Journal is the default tab.
  */
 export function JournalFcmOnFocus() {
   const { isHydrated, user } = useAuth();
@@ -21,7 +21,7 @@ export function JournalFcmOnFocus() {
         return;
       }
       ranForUserIdRef.current = user.id;
-      void FCMService.initialize();
+      void OneSignalService.bootstrap();
     }, [isHydrated, user]),
   );
 

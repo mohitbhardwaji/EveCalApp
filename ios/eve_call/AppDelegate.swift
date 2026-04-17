@@ -15,8 +15,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
+    if let plistPath = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+       let plist = NSDictionary(contentsOfFile: plistPath),
+       let apiKey = plist["API_KEY"] as? String,
+       isValidFirebaseAPIKey(apiKey) {
       FirebaseApp.configure()
+    } else {
+      print("[Firebase] Skipping FirebaseApp.configure(): missing or invalid GoogleService-Info.plist")
     }
 
     application.registerForRemoteNotifications()
@@ -36,6 +41,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       launchOptions: launchOptions
     )
 
+    return true
+  }
+
+  private func isValidFirebaseAPIKey(_ apiKey: String) -> Bool {
+    // Firebase iOS API keys are expected to start with "A" and be 39 chars.
+    if apiKey.count != 39 { return false }
+    if !apiKey.hasPrefix("A") { return false }
+    if apiKey.contains("REPLACE_WITH_") { return false }
     return true
   }
 

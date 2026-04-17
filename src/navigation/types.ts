@@ -4,6 +4,7 @@ export type RootStackParamList = {
   Premium: undefined;
   Settings: undefined;
   Notifications: undefined;
+  SubscriptionConfirm: undefined;
 };
 
 export type AuthStackParamList = {

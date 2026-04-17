@@ -6,7 +6,8 @@ import { MainWithPremiumGate } from './MainWithPremiumGate';
 import { PremiumModalScreen } from '../screens/modals/PremiumModalScreen';
 import { SettingsStackNavigator } from './SettingsStackNavigator';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
-import { isPremiumUser } from '../lib/premium';
+import { SubscriptionConfirmScreen } from '../screens/subscription/SubscriptionConfirmScreen';
+import { isPremiumUser, isTrialExpired } from '../lib/premium';
 import { useAuth } from '../state/auth/AuthContext';
 import { useSubscription } from '../state/subscription/SubscriptionContext';
 
@@ -53,6 +54,14 @@ export function RootNavigator() {
           />
         </>
       )}
+      <Root.Screen
+        name="SubscriptionConfirm"
+        component={SubscriptionConfirmScreen}
+        options={{
+          presentation: 'modal',
+          animation: 'slide_from_bottom',
+        }}
+      />
     </Root.Navigator>
   );
 }
@@ -63,8 +72,14 @@ export function useShouldShowPremiumModal() {
   if (!isAuthed) {
     return false;
   }
+  if (user == null) {
+    return false;
+  }
   if (user != null && (isPremiumUser(userData) || isPro)) {
     return false;
+  }
+  if (isTrialExpired(user, userData)) {
+    return true;
   }
   return !premiumSeen;
 }

@@ -18,7 +18,7 @@ import type { SettingsStackParamList } from '../../navigation/types';
 import { useAuth } from '../../state/auth/AuthContext';
 import { StorageKeys } from '../../state/auth/storageKeys';
 import { WarmAlertDialog } from '../../components/WarmAlertDialog';
-import { openCustomerCenter } from '../../services/revenuecat/revenueCatUi';
+import { openCustomerCenter, presentPaywall } from '../../services/revenuecat/revenueCatUi';
 import { useSubscription } from '../../state/subscription/SubscriptionContext';
 
 type Nav = NativeStackNavigationProp<SettingsStackParamList, 'SettingsMain'>;
@@ -61,6 +61,37 @@ export function SettingsHomeScreen() {
   };
 
   const handleManageSubscription = React.useCallback(async () => {
+    setManageLoading(true);
+    try {
+      if (isPro) {
+        await openCustomerCenter();
+      } else {
+        const { unlocked } = await presentPaywall();
+        if (unlocked) {
+          await refresh();
+        }
+      }
+      await refresh();
+    } catch (e) {
+      // Fallback: for users without active entitlement, Customer Center may not show purchasable plans.
+      try {
+        const { unlocked } = await presentPaywall();
+        if (unlocked) {
+          await refresh();
+        }
+      } catch (fallbackError) {
+        const msg =
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : String(fallbackError);
+        Alert.alert('Could not open subscriptions', msg);
+      }
+    } finally {
+      setManageLoading(false);
+    }
+  }, [isPro, refresh]);
+
+  const handleOpenCustomerCenterOnly = React.useCallback(async () => {
     setManageLoading(true);
     try {
       await openCustomerCenter();
@@ -131,7 +162,7 @@ export function SettingsHomeScreen() {
             />
           </Pressable>
           <Divider />
-          <Pressable onPress={() => void handleManageSubscription()} style={styles.rowPress}>
+          <Pressable onPress={() => void handleOpenCustomerCenterOnly()} style={styles.rowPress}>
             <SettingsRow
               icon="refresh-cw"
               label="Open Customer Center"

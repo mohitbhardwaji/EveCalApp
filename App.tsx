@@ -1,15 +1,16 @@
-import '@react-native-firebase/app';
 import React from 'react';
 import { StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { rootNavigationRef } from './src/navigation/rootNavigationRef';
+import { appLinking } from './src/navigation/linking';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { EveCalTheme } from './src/theme/theme';
 import { AuthProvider } from './src/state/auth/AuthProvider';
 import { NotificationBadgeProvider } from './src/state/notifications/NotificationBadgeContext';
 import { SubscriptionProvider } from './src/state/subscription/SubscriptionProvider';
 import Feather from 'react-native-vector-icons/Feather';
+import OneSignalService from './src/services/OneSignalService';
 
 export default function App() {
   React.useEffect(() => {
@@ -22,6 +23,10 @@ export default function App() {
     }
   }, []);
 
+  React.useEffect(() => {
+    void OneSignalService.bootstrap();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" />
@@ -29,6 +34,7 @@ export default function App() {
         <SubscriptionProvider>
           <NavigationContainer
             ref={rootNavigationRef}
+            linking={appLinking}
             theme={EveCalTheme.navigationTheme}>
             <NotificationBadgeProvider>
               <RootNavigator />

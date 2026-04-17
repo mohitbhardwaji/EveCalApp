@@ -1,5 +1,11 @@
 import { getSupabase } from '../supabase/client';
 
+export type CaptureTaskPayload = {
+  title: string;
+  description: string;
+  createdAt: string;
+};
+
 export type ClassifyTaskResult =
   | { ok: true; data: unknown; summary: string }
   | { ok: false; message: string };
@@ -40,7 +46,10 @@ function summarizeClassifiedTask(data: unknown): string {
   return raw.length > 120 ? `${raw.slice(0, 120)}…` : raw;
 }
 
-export async function classifyTaskText(text: string): Promise<ClassifyTaskResult> {
+export async function classifyTaskText(
+  text: string,
+  options?: { captureTask?: CaptureTaskPayload },
+): Promise<ClassifyTaskResult> {
   const input = text.trim();
   if (!input) {
     return { ok: false, message: 'Please enter a task before submitting.' };
@@ -51,8 +60,15 @@ export async function classifyTaskText(text: string): Promise<ClassifyTaskResult
     const session = (await supabase.auth.getSession()).data.session;
     const accessToken = session?.access_token;
 
+    const body: { text: string; captureTask?: CaptureTaskPayload } = {
+      text: input,
+    };
+    if (options?.captureTask) {
+      body.captureTask = options.captureTask;
+    }
+
     const { data, error } = await supabase.functions.invoke('classify-task', {
-      body: { text: input },
+      body,
       headers: accessToken
         ? { Authorization: `Bearer ${accessToken}` }
         : undefined,

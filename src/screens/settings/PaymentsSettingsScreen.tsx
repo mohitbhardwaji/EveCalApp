@@ -1,10 +1,54 @@
 import React from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { SettingsDetailLayout } from './SettingsDetailLayout';
 import { EveCalTheme } from '../../theme/theme';
+import { useSubscription } from '../../state/subscription/SubscriptionContext';
+import { revenueCatService } from '../../services/revenuecat/RevenueCatService';
+import { presentPaywall } from '../../services/revenuecat/revenueCatUi';
 
 export function PaymentsSettingsScreen() {
+  const { isPro, refresh } = useSubscription();
+  const [busy, setBusy] = React.useState<'paywall' | 'restore' | null>(null);
+
+  const handleViewPlans = React.useCallback(async () => {
+    setBusy('paywall');
+    try {
+      const { unlocked } = await presentPaywall();
+      if (unlocked) {
+        await refresh();
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      Alert.alert('Could not open paywall', msg);
+    } finally {
+      setBusy(null);
+    }
+  }, [refresh]);
+
+  const handleRestorePurchase = React.useCallback(async () => {
+    setBusy('restore');
+    try {
+      const result = await revenueCatService.restorePurchases();
+      if (!result.ok) {
+        Alert.alert('Restore failed', result.message);
+        return;
+      }
+      await refresh();
+      Alert.alert(
+        'Restore complete',
+        revenueCatService.isProActive(result.customerInfo)
+          ? 'Your premium access is now active.'
+          : 'No active purchases were found for this account.',
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      Alert.alert('Restore failed', msg);
+    } finally {
+      setBusy(null);
+    }
+  }, [refresh]);
+
   return (
     <SettingsDetailLayout title="Payments">
       <Text style={styles.lead}>
@@ -14,7 +58,7 @@ export function PaymentsSettingsScreen() {
       <View style={styles.card}>
         <View style={styles.planRow}>
           <Text style={styles.planLabel}>Current plan</Text>
-          <Text style={styles.planValue}>Free</Text>
+          <Text style={styles.planValue}>{isPro ? 'Premium' : 'Free'}</Text>
         </View>
         <Text style={styles.hint}>
           Upgrade anytime to unlock unlimited voice tasks, smart assignment, and
@@ -22,9 +66,12 @@ export function PaymentsSettingsScreen() {
         </Text>
         <Pressable
           style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
-          onPress={() => Linking.openURL('https://eveandcal.com')}>
-          <Text style={styles.primaryBtnText}>View plans</Text>
-          <Feather name="external-link" size={16} color="#fff" />
+          disabled={busy != null}
+          onPress={handleViewPlans}>
+          <Text style={styles.primaryBtnText}>
+            {busy === 'paywall' ? 'Opening...' : 'View plans'}
+          </Text>
+          <Feather name="chevron-right" size={16} color="#fff" />
         </Pressable>
       </View>
 
@@ -36,8 +83,11 @@ export function PaymentsSettingsScreen() {
         </Text>
         <Pressable
           style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
-          onPress={() => {}}>
-          <Text style={styles.secondaryBtnText}>Restore purchase</Text>
+          disabled={busy != null}
+          onPress={handleRestorePurchase}>
+          <Text style={styles.secondaryBtnText}>
+            {busy === 'restore' ? 'Restoring...' : 'Restore purchase'}
+          </Text>
         </Pressable>
       </View>
 
