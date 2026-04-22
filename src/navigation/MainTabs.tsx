@@ -4,7 +4,7 @@ import type { MainTabParamList } from './types';
 import { JournalStackNavigator } from './JournalStackNavigator';
 import { PathStackNavigator } from './PathStackNavigator';
 import { FocusScreen } from '../screens/main/FocusScreen';
-import { CaptureScreen } from '../screens/main/CaptureScreen';
+import { CaptureScreen } from '../screens/CaptureScreen';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';

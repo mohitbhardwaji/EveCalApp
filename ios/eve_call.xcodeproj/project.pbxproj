@@ -286,6 +286,7 @@
 				DEVELOPMENT_TEAM = Y2H26URNHR;
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = Y2H26URNHR;
 				ENABLE_BITCODE = NO;
+				CODE_SIGN_ENTITLEMENTS = eve_call/eve_call.entitlements;
 				INFOPLIST_FILE = eve_call/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -324,6 +325,7 @@
 				DEFINES_MODULE = NO;
 				DEVELOPMENT_TEAM = Y2H26URNHR;
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = Y2H26URNHR;
+				CODE_SIGN_ENTITLEMENTS = eve_call/eve_call.entitlements;
 				INFOPLIST_FILE = eve_call/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (

@@ -8,4 +8,5 @@ declare module '@env' {
   export const SUPABASE_URL: string | undefined;
   export const SUPABASE_ANON_KEY: string | undefined;
   export const SUPABASE_OAUTH_REDIRECT_URL: string | undefined;
+  export const BACKEND_API_URL: string | undefined;
 }

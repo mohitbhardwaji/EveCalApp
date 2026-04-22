@@ -1,3 +1,7 @@
 import { ONESIGNAL_APP_ID as ONESIGNAL_APP_ID_ENV } from '@env';
 
-export const ONESIGNAL_APP_ID = (ONESIGNAL_APP_ID_ENV ?? '').trim();
+const ONESIGNAL_APP_ID_FALLBACK = '46aa1df3-ab86-400d-a1cb-c428e92cf0d4';
+
+export const ONESIGNAL_APP_ID = (
+  ONESIGNAL_APP_ID_ENV ?? ONESIGNAL_APP_ID_FALLBACK
+).trim();

@@ -1,9 +1,13 @@
+export { CaptureScreen } from '../CaptureScreen';
+export { CaptureScreen } from '../CaptureScreen';
+export { CaptureScreen } from '../CaptureScreen';
+export { CaptureScreen } from '../CaptureScreen';
 // @refresh reset
 /**
- * Capture: parallel capture + process
- * - Listening: VAD-only scratch file (evecal_listen.m4a), never transcribed.
- * - Recording: DEFAULT segment file after speech onset; pause → snapshot → async transcribe + optional task.
- * - Processing never awaits before resuming listening.
+ * Capture: session-scoped parallel capture + pipeline
+ * - Listening: VAD scratch file (never transcribed); recording starts on speech onset.
+ * - Sustained silence (~1.5–2s) closes the current segment file, enqueues one transcript, then listen restarts for the next utterance.
+ * - Pipeline (transcribe → extract tasks → per-task classify) is async; updates stop after unmount (mountedRef).
  */
 import React from 'react';
 import {
@@ -20,7 +24,6 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
-import RNFS from 'react-native-fs';
 import type { RecordBackType } from 'react-native-audio-recorder-player';
 import { WarmAlertDialog } from '../../components/WarmAlertDialog';
 import {
@@ -31,9 +34,20 @@ import {
 import { VOICE_CAPTURE_AUDIO_SET } from '../../native/recordingAudioSet';
 import { EveCalTheme } from '../../theme/theme';
 import { TopHeader } from '../../components/TopHeader';
-import { transcribeCaptureSegmentWithGemini } from '../../lib/speech/transcribeWithGemini';
-import { classifyTaskText } from '../../lib/tasks/classifyTask';
-import { evaluateCaptureTaskIntent } from '../../lib/tasks/evaluateCaptureTaskIntent';
+import { runSegmentPipeline } from '../../voice/pipeline/runSegmentPipeline';
+import {
+  listenRecorderPath,
+  segmentRecordingPath,
+  snapshotToSegmentFile,
+  unlinkListenScratch,
+  unlinkSegmentRecording,
+} from '../../voice/recording/fsPaths';
+import { recordingFailureMessage } from '../../voice/recording/recordingFailureMessage';
+import type {
+  CaptureSegment,
+  SegmentStatus,
+  TaskRow,
+} from '../../voice/session/captureSegmentTypes';
 import {
   consumeCaptureCategoryIntent,
   type CaptureCategoryIntent,
@@ -57,48 +71,39 @@ const REC_BLUE = {
   stopShadow: 'rgba(55, 100, 160, 0.42)',
 };
 
-const SILENCE_DB_THRESHOLD = -48;
+/** Listening: energy above this counts toward speech-onset streak. */
+const LISTEN_SPEECH_DB = -48;
+/** Target end-of-utterance pause (1.5–2s band). */
 const PAUSE_TO_FINALIZE_MS = 1750;
+/** Abort a speech-onset false start (no real audio) after this much sustained quiet. */
+const DEAD_AIR_WITHOUT_SPEECH_MS = 3200;
 const MIN_SEGMENT_MS = 400;
 const MAX_SEGMENT_MS = 120_000;
 const SPEECH_ONSET_STREAK_TICKS = 2;
 const MAX_LISTENING_FILE_MS = 45_000;
+/**
+ * Ignore end-of-segment silence until the segment recorder has run briefly (warm-up / metering).
+ */
+const GRACE_AFTER_SEGMENT_START_MS = 550;
+/**
+ * Recording: frames above this reset pause detection (stricter than listen — reduces false “still speaking” during pauses).
+ */
+const RECORDING_SPEECH_RESET_DB = -36;
+/** Recording: frames below this count as sustained quiet (see wall-clock `sustainedQuietSinceRef`). */
+const RECORDING_QUIET_DB = -52;
 
-const LISTEN_SCRATCH_BASENAME = 'evecal_listen.m4a';
-
-function listenRecorderPath(): string {
-  return Platform.OS === 'android'
-    ? `${RNFS.CachesDirectoryPath}/${LISTEN_SCRATCH_BASENAME}`
-    : LISTEN_SCRATCH_BASENAME;
+function newCaptureSegmentId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
-
-function listenScratchFsPath(): string {
-  return `${RNFS.CachesDirectoryPath}/${LISTEN_SCRATCH_BASENAME}`;
-}
-
-type SegmentStatus =
-  | 'transcribing'
-  | 'evaluating'
-  | 'done'
-  | 'done_note'
-  | 'failed';
-
-type Segment = {
-  id: string;
-  createdAt: number;
-  categoryTitle?: string;
-  status: SegmentStatus;
-  fullText: string;
-  taskSummary?: string;
-  errorMessage?: string;
-};
 
 function statusLabel(s: SegmentStatus): string {
   switch (s) {
     case 'transcribing':
       return 'Transcribing';
-    case 'evaluating':
-      return 'Task check';
+    case 'extracting_tasks':
+      return 'Extracting tasks';
+    case 'tasks_saving':
+      return 'Saving tasks';
     case 'done':
       return 'Task saved';
     case 'done_note':
@@ -112,14 +117,31 @@ function statusColor(s: SegmentStatus): string {
   switch (s) {
     case 'transcribing':
       return 'rgba(75, 122, 166, 0.95)';
-    case 'evaluating':
+    case 'extracting_tasks':
       return 'rgba(120, 100, 180, 0.92)';
+    case 'tasks_saving':
+      return 'rgba(100, 130, 175, 0.92)';
     case 'done':
       return 'rgba(47, 141, 119, 0.95)';
     case 'done_note':
       return 'rgba(100, 120, 140, 0.92)';
     case 'failed':
       return 'rgba(183, 92, 72, 0.95)';
+  }
+}
+
+function taskRowStatusLabel(r: TaskRow): string {
+  switch (r.status) {
+    case 'pending':
+      return 'Queued';
+    case 'saving':
+      return 'Saving…';
+    case 'done':
+      return 'Saved';
+    case 'skipped':
+      return 'Note';
+    case 'failed':
+      return 'Issue';
   }
 }
 
@@ -165,9 +187,17 @@ function SegmentCard({
   segment,
   onDismiss,
 }: {
-  segment: Segment;
+  segment: CaptureSegment;
   onDismiss: (id: string) => void;
 }) {
+  const showDismiss =
+    segment.status === 'done' ||
+    segment.status === 'done_note' ||
+    segment.status === 'failed';
+  const showTranscriptBody =
+    !!segment.fullText &&
+    segment.status !== 'transcribing';
+
   return (
     <View style={styles.transcriptCard}>
       <View style={styles.transcriptCardTop}>
@@ -187,7 +217,7 @@ function SegmentCard({
               minute: '2-digit',
             })}
           </Text>
-          {segment.status === 'done' || segment.status === 'done_note' ? (
+          {showDismiss ? (
             <Pressable
               onPress={() => onDismiss(segment.id)}
               hitSlop={10}
@@ -203,18 +233,37 @@ function SegmentCard({
         <Text style={styles.transcriptCategory}>{segment.categoryTitle}</Text>
       ) : null}
       {segment.status === 'transcribing' ? <TranscriptSkeleton /> : null}
-      {(segment.status === 'evaluating' ||
-        segment.status === 'done' ||
-        segment.status === 'done_note') &&
-      segment.fullText ? (
+      {showTranscriptBody ? (
         <Text style={styles.transcriptBody}>{segment.fullText}</Text>
       ) : null}
-      {segment.status === 'evaluating' ? (
-        <Text style={styles.transcriptHint}>Checking for an actionable task…</Text>
+      {segment.status === 'extracting_tasks' ? (
+        <Text style={styles.transcriptHint}>Splitting transcript into tasks…</Text>
       ) : null}
-      {segment.status === 'done_note' ? (
+      {segment.status === 'tasks_saving' && !segment.taskRows?.length ? (
+        <Text style={styles.transcriptHint}>Saving tasks…</Text>
+      ) : null}
+      {segment.taskRows && segment.taskRows.length > 0 ? (
+        <View style={styles.taskRows}>
+          {segment.taskRows.map(row => (
+            <View key={row.id} style={styles.taskRow}>
+              <View style={styles.taskRowTop}>
+                <Text style={styles.taskRowStatus}>{taskRowStatusLabel(row)}</Text>
+              </View>
+              <Text style={styles.taskRowPhrase}>{row.phrase}</Text>
+              {row.summary ? (
+                <Text style={styles.taskRowSummary}>{row.summary}</Text>
+              ) : null}
+              {row.errorMessage ? (
+                <Text style={styles.taskRowError}>{row.errorMessage}</Text>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {segment.status === 'done_note' &&
+      (!segment.taskRows || segment.taskRows.length === 0) ? (
         <Text style={styles.transcriptHint}>
-          No task created — not actionable as a to-do.
+          No actionable tasks in this segment.
         </Text>
       ) : null}
       {segment.status === 'done' && segment.taskSummary ? (
@@ -227,63 +276,6 @@ function SegmentCard({
       ) : null}
     </View>
   );
-}
-
-function recordingFailureMessage(nativeDetail: string): string {
-  const base =
-    'Something went wrong starting the microphone. Try again in a moment.';
-  const hints: string[] = [];
-  if (
-    nativeDetail.includes('3 attempts') ||
-    nativeDetail.toLowerCase().includes('microphone')
-  ) {
-    hints.push(
-      '• iOS Simulator often cannot record audio — use a physical iPhone to test recording.',
-    );
-    hints.push(
-      '• On a real device: Settings → Eve Cal → Microphone → allow, then reopen the app.',
-    );
-  }
-  if (nativeDetail.includes('permission denied')) {
-    hints.length = 0;
-    hints.push(
-      'Microphone access was denied. Enable it in Settings → Eve Cal → Microphone.',
-    );
-  }
-  if (hints.length === 0) {
-    return `${base}\n\n${nativeDetail}`;
-  }
-  return `${base}\n\n${hints.join('\n')}`;
-}
-
-function recorderPathToFsPath(uri: string): string {
-  const u = uri.trim();
-  if (u.startsWith('content://')) {
-    return u;
-  }
-  return u.replace(/^file:(\/)+/, '/');
-}
-
-async function snapshotToSegmentFile(
-  segmentId: string,
-  rawPath: string,
-): Promise<string | null> {
-  if (
-    !rawPath ||
-    rawPath === 'Already stopped' ||
-    rawPath.toLowerCase().includes('already')
-  ) {
-    return null;
-  }
-  const src = recorderPathToFsPath(rawPath);
-  const dest = `${RNFS.CachesDirectoryPath}/evecal_cap_${segmentId}.m4a`;
-  try {
-    await RNFS.copyFile(src, dest);
-    return dest;
-  } catch (e) {
-    console.warn('snapshotToSegmentFile', e);
-    return null;
-  }
 }
 
 async function ensureAndroidMicPermission(): Promise<boolean> {
@@ -314,17 +306,23 @@ export function CaptureScreen() {
     title: string;
     message: string;
   } | null>(null);
-  const [segments, setSegments] = React.useState<Segment[]>([]);
+  const [segments, setSegments] = React.useState<CaptureSegment[]>([]);
 
   const sessionActiveRef = React.useRef(false);
   const mountedRef = React.useRef(true);
   const flushingRef = React.useRef(false);
   const phaseRef = React.useRef<'listening' | 'recording'>('listening');
+  /** Recording: wall-clock pause uses this only after a loud frame (> LISTEN_SPEECH_DB). 0 = not set yet. */
   const lastLoudAtRef = React.useRef(0);
   const hadSpeechInSegmentRef = React.useRef(false);
   const speechStreakRef = React.useRef(0);
   const pathCategoryRef = React.useRef<CaptureCategoryIntent | null>(null);
   const recordBackRef = React.useRef<(e: RecordBackType) => void>(() => {});
+  /** Set when segment recording starts; cleared when finalize completes or discards junk. */
+  const activeRecordingSegmentIdRef = React.useRef<string | null>(null);
+  /** When db first went below RECORDING_QUIET_DB (after grace); null if not in a quiet run. */
+  const sustainedQuietSinceRef = React.useRef<number | null>(null);
+  const lastRecordingPositionMsRef = React.useRef(0);
 
   React.useEffect(() => {
     pathCategoryRef.current = pathCategory;
@@ -359,72 +357,14 @@ export function CaptureScreen() {
     setSegments(prev => prev.filter(s => s.id !== id));
   }, []);
 
-  /** Async pipeline: never block capture. */
-  const runProcessPipeline = React.useCallback(
-    async (segmentId: string, filePath: string) => {
-      const tr = await transcribeCaptureSegmentWithGemini(filePath);
-      if (!mountedRef.current) {
-        return;
-      }
-      if (!tr.ok) {
-        setSegments(prev =>
-          prev.map(s =>
-            s.id === segmentId
-              ? {
-                  ...s,
-                  status: 'failed',
-                  errorMessage: tr.message,
-                  fullText: '',
-                }
-              : s,
-          ),
-        );
-        return;
-      }
-      const text = tr.text.trim();
-      if (!text) {
-        setSegments(prev => prev.filter(s => s.id !== segmentId));
-        return;
-      }
-      setSegments(prev =>
-        prev.map(s =>
-          s.id === segmentId
-            ? { ...s, fullText: text, status: 'evaluating' }
-            : s,
-        ),
-      );
-
-      const decision = await evaluateCaptureTaskIntent(text);
-      if (!mountedRef.current) {
-        return;
-      }
-
-      if (decision.isTask) {
-        const result = await classifyTaskText(text, {
-          captureTask: decision.payload,
-        });
-        if (!mountedRef.current) {
-          return;
-        }
-        setSegments(prev =>
-          prev.map(s =>
-            s.id === segmentId
-              ? {
-                  ...s,
-                  status: result.ok ? 'done' : 'failed',
-                  taskSummary: result.ok ? result.summary : undefined,
-                  errorMessage: result.ok ? undefined : result.message,
-                }
-              : s,
-          ),
-        );
-      } else {
-        setSegments(prev =>
-          prev.map(s =>
-            s.id === segmentId ? { ...s, status: 'done_note' } : s,
-          ),
-        );
-      }
+  const enqueueSegmentPipeline = React.useCallback(
+    (segmentId: string, filePath: string) => {
+      void runSegmentPipeline({
+        segmentId,
+        filePath,
+        mounted: () => mountedRef.current,
+        setSegments,
+      });
     },
     [],
   );
@@ -454,12 +394,15 @@ export function CaptureScreen() {
   );
 
   const startSegmentRecorder = React.useCallback(
-    async (ar: NonNullable<ReturnType<typeof tryLoadAudioRecorder>>) => {
+    async (
+      ar: NonNullable<ReturnType<typeof tryLoadAudioRecorder>>,
+      outputPath: string,
+    ) => {
       attachRecorderListener(ar);
       if (Platform.OS === 'ios') {
         await new Promise<void>(r => setTimeout(r, 80));
       }
-      await ar.startRecorder(undefined, VOICE_CAPTURE_AUDIO_SET, true);
+      await ar.startRecorder(outputPath, VOICE_CAPTURE_AUDIO_SET, true);
     },
     [attachRecorderListener],
   );
@@ -485,20 +428,23 @@ export function CaptureScreen() {
         /* */
       }
       ar.removeRecordBackListener();
-      try {
-        await RNFS.unlink(listenScratchFsPath());
-      } catch {
-        /* */
-      }
-      phaseRef.current = 'recording';
-      hadSpeechInSegmentRef.current = true;
-      lastLoudAtRef.current = Date.now();
+      await unlinkListenScratch();
+
+      const segmentId = newCaptureSegmentId();
+      activeRecordingSegmentIdRef.current = segmentId;
+      sustainedQuietSinceRef.current = null;
+      lastRecordingPositionMsRef.current = 0;
+      hadSpeechInSegmentRef.current = false;
+      lastLoudAtRef.current = 0;
       speechStreakRef.current = 0;
+      phaseRef.current = 'recording';
       setIsRecordingSegment(true);
       setSegmentSecs(0);
-      await startSegmentRecorder(ar);
+      await startSegmentRecorder(ar, segmentRecordingPath(segmentId));
     } catch (e) {
-      console.warn('transitionListenToRecording', e);
+      void e;
+      activeRecordingSegmentIdRef.current = null;
+      sustainedQuietSinceRef.current = null;
       sessionActiveRef.current = false;
       setSessionActive(false);
       setIsRecordingSegment(false);
@@ -512,13 +458,21 @@ export function CaptureScreen() {
     if (!ar) {
       setSessionActive(false);
       setIsRecordingSegment(false);
+      activeRecordingSegmentIdRef.current = null;
       return;
     }
     if (flushingRef.current) {
       return;
     }
+    if (phaseRef.current !== 'recording') {
+      return;
+    }
     flushingRef.current = true;
     try {
+      const segmentId = activeRecordingSegmentIdRef.current;
+      const hadAudio = hadSpeechInSegmentRef.current;
+      const durationMs = lastRecordingPositionMsRef.current;
+
       try {
         await ar.pauseRecorder();
       } catch {
@@ -528,11 +482,56 @@ export function CaptureScreen() {
       try {
         rawPath = await ar.stopRecorder();
       } catch (e) {
-        console.warn('stopRecorder', e);
+        void e;
       }
       ar.removeRecordBackListener();
+      activeRecordingSegmentIdRef.current = null;
+      sustainedQuietSinceRef.current = null;
 
-      const segmentId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const resume = sessionActiveRef.current && mountedRef.current;
+      const resumeListening = async (): Promise<boolean> => {
+        if (!resume) {
+          setSessionActive(false);
+          setIsRecordingSegment(false);
+          phaseRef.current = 'listening';
+          return false;
+        }
+        phaseRef.current = 'listening';
+        setIsRecordingSegment(false);
+        setSegmentSecs(0);
+        hadSpeechInSegmentRef.current = false;
+        speechStreakRef.current = 0;
+        lastLoudAtRef.current = Date.now();
+        lastRecordingPositionMsRef.current = 0;
+        try {
+          await startListenRecorder(ar);
+          return true;
+        } catch (e) {
+          void e;
+          sessionActiveRef.current = false;
+          setSessionActive(false);
+          setIsRecordingSegment(false);
+          setWarmAlert({
+            title: 'Microphone error',
+            message: recordingFailureMessage(
+              e instanceof Error ? e.message : String(e),
+            ),
+          });
+          return false;
+        }
+      };
+
+      const junkSegment =
+        !segmentId || !hadAudio || durationMs < MIN_SEGMENT_MS;
+
+      if (junkSegment) {
+        if (segmentId) {
+          await unlinkSegmentRecording(segmentId);
+        }
+        await resumeListening();
+        return;
+      }
+
       const categoryTitle = pathCategoryRef.current?.categoryTitle;
       setSegments(prev => [
         {
@@ -553,30 +552,9 @@ export function CaptureScreen() {
         ? await snapshotToSegmentFile(segmentId, rawPath)
         : null;
 
-      const resume = sessionActiveRef.current && mountedRef.current;
       let listenOk = false;
       if (resume) {
-        phaseRef.current = 'listening';
-        setIsRecordingSegment(false);
-        setSegmentSecs(0);
-        hadSpeechInSegmentRef.current = false;
-        speechStreakRef.current = 0;
-        lastLoudAtRef.current = Date.now();
-        try {
-          await startListenRecorder(ar);
-          listenOk = true;
-        } catch (e) {
-          console.warn('resume listen', e);
-          sessionActiveRef.current = false;
-          setSessionActive(false);
-          setIsRecordingSegment(false);
-          setWarmAlert({
-            title: 'Microphone error',
-            message: recordingFailureMessage(
-              e instanceof Error ? e.message : String(e),
-            ),
-          });
-        }
+        listenOk = await resumeListening();
       } else {
         setSessionActive(false);
         setIsRecordingSegment(false);
@@ -584,7 +562,7 @@ export function CaptureScreen() {
       }
 
       if (snapshotPath) {
-        void runProcessPipeline(segmentId, snapshotPath);
+        void enqueueSegmentPipeline(segmentId, snapshotPath);
       } else {
         const errMsg = hadPath
           ? 'Could not save audio.'
@@ -604,7 +582,7 @@ export function CaptureScreen() {
     } finally {
       flushingRef.current = false;
     }
-  }, [runProcessPipeline, startListenRecorder]);
+  }, [enqueueSegmentPipeline, startListenRecorder]);
 
   const rotateListenScratch = React.useCallback(async () => {
     if (flushingRef.current || phaseRef.current !== 'listening') {
@@ -630,7 +608,7 @@ export function CaptureScreen() {
       speechStreakRef.current = 0;
       await startListenRecorder(ar);
     } catch (e) {
-      console.warn('rotateListenScratch', e);
+      void e;
     } finally {
       flushingRef.current = false;
     }
@@ -639,19 +617,23 @@ export function CaptureScreen() {
   const onRecordBack = React.useCallback(
     (e: RecordBackType) => {
       const pos = e.currentPosition ?? 0;
-      const db = typeof e.currentMetering === 'number' ? e.currentMetering : -160;
 
       if (!sessionActiveRef.current || flushingRef.current) {
         return;
       }
 
       if (phaseRef.current === 'listening') {
+        const dbListen =
+          typeof e.currentMetering === 'number' &&
+          Number.isFinite(e.currentMetering)
+            ? e.currentMetering
+            : -160;
         setSegmentSecs(0);
         if (pos >= MAX_LISTENING_FILE_MS) {
           void rotateListenScratch();
           return;
         }
-        if (db > SILENCE_DB_THRESHOLD) {
+        if (dbListen > LISTEN_SPEECH_DB) {
           speechStreakRef.current += 1;
         } else {
           speechStreakRef.current = 0;
@@ -663,19 +645,69 @@ export function CaptureScreen() {
       }
 
       const segMs = pos;
+      lastRecordingPositionMsRef.current = segMs;
       setSegmentSecs(segMs / 1000);
-      if (db > SILENCE_DB_THRESHOLD) {
-        lastLoudAtRef.current = Date.now();
-        hadSpeechInSegmentRef.current = true;
-      }
-      if (!hadSpeechInSegmentRef.current || segMs < MIN_SEGMENT_MS) {
+
+      if (segMs >= MAX_SEGMENT_MS && phaseRef.current === 'recording') {
+        void finalizeSegmentAndResumeListen();
         return;
       }
-      const silentFor = Date.now() - lastLoudAtRef.current;
-      if (
-        (silentFor >= PAUSE_TO_FINALIZE_MS || segMs >= MAX_SEGMENT_MS) &&
-        phaseRef.current === 'recording'
-      ) {
+
+      const rawMeter = e.currentMetering;
+      const meteringOk =
+        typeof rawMeter === 'number' && Number.isFinite(rawMeter);
+      if (!meteringOk) {
+        return;
+      }
+      const meterDb = rawMeter;
+
+      if (meterDb > LISTEN_SPEECH_DB) {
+        sustainedQuietSinceRef.current = null;
+        lastLoudAtRef.current = Date.now();
+      }
+      if (meterDb > RECORDING_SPEECH_RESET_DB) {
+        hadSpeechInSegmentRef.current = true;
+      }
+
+      if (segMs < GRACE_AFTER_SEGMENT_START_MS) {
+        sustainedQuietSinceRef.current = null;
+        return;
+      }
+
+      if (meterDb < RECORDING_QUIET_DB) {
+        if (sustainedQuietSinceRef.current === null) {
+          sustainedQuietSinceRef.current = Date.now();
+        }
+      } else {
+        sustainedQuietSinceRef.current = null;
+      }
+
+      const quietMs =
+        sustainedQuietSinceRef.current !== null
+          ? Date.now() - sustainedQuietSinceRef.current
+          : 0;
+      const wallSinceLoudMs =
+        lastLoudAtRef.current > 0
+          ? Date.now() - lastLoudAtRef.current
+          : 0;
+
+      if (!hadSpeechInSegmentRef.current) {
+        if (quietMs >= DEAD_AIR_WITHOUT_SPEECH_MS) {
+          void finalizeSegmentAndResumeListen();
+        }
+        return;
+      }
+
+      if (segMs < MIN_SEGMENT_MS) {
+        return;
+      }
+
+      const pauseDone =
+        quietMs >= PAUSE_TO_FINALIZE_MS ||
+        (lastLoudAtRef.current > 0 &&
+          wallSinceLoudMs >= PAUSE_TO_FINALIZE_MS);
+
+      if (pauseDone) {
         void finalizeSegmentAndResumeListen();
       }
     },
@@ -714,11 +746,7 @@ export function CaptureScreen() {
       } catch {
         /* */
       }
-      try {
-        await RNFS.unlink(listenScratchFsPath());
-      } catch {
-        /* */
-      }
+      await unlinkListenScratch();
     }
     phaseRef.current = 'listening';
   }, [finalizeSegmentAndResumeListen]);
@@ -1386,5 +1414,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: 'rgba(183, 92, 72, 0.96)',
     lineHeight: 18,
+  },
+  taskRows: {
+    marginTop: 12,
+    gap: 10,
+  },
+  taskRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(75,122,166,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(58,45,42,0.06)',
+  },
+  taskRowTop: {
+    marginBottom: 6,
+  },
+  taskRowStatus: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'rgba(75, 122, 166, 0.9)',
+    letterSpacing: 0.3,
+  },
+  taskRowPhrase: {
+    fontSize: 14,
+    color: EveCalTheme.colors.text,
+    lineHeight: 19,
+  },
+  taskRowSummary: {
+    marginTop: 6,
+    fontSize: 12,
+    color: EveCalTheme.colors.accent2,
+    lineHeight: 17,
+  },
+  taskRowError: {
+    marginTop: 6,
+    fontSize: 12,
+    color: 'rgba(183, 92, 72, 0.96)',
+    lineHeight: 16,
   },
 });

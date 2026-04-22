@@ -7,6 +7,7 @@ import {
   signOutSupabase,
   startOAuthSignIn,
 } from '../../lib/supabase/auth';
+import OneSignalService from '../../services/OneSignalService';
 import { getSupabase } from '../../lib/supabase/client';
 import { AuthContext } from './AuthContext';
 import { StorageKeys } from './storageKeys';
@@ -25,6 +26,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = React.useState<AuthState>(initialState);
 
   React.useEffect(() => {
+    if (!state.isHydrated) {
+      return;
+    }
+    OneSignalService.syncUser(state.user?.id ?? null);
+  }, [state.isHydrated, state.user?.id]);
+
+  React.useEffect(() => {
     let mounted = true;
     const supabase = getSupabase();
 
@@ -37,17 +45,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ]);
         if (!mounted) return;
 
-        const { error } = await supabase.auth.getSession();
-        if (__DEV__ && error) {
-          // eslint-disable-next-line no-console
-          console.log('[supabase] getSession (hydrate)', error.message);
-        }
+        await supabase.auth.getSession();
         await supabase.auth.refreshSession();
         const freshSession = (await supabase.auth.getSession()).data.session;
-        if (__DEV__ && freshSession) {
-          // eslint-disable-next-line no-console
-          console.log(freshSession.access_token);
-        }
         const session = freshSession;
         const premiumSeen = premiumSeenRaw === '1';
 
@@ -95,17 +95,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       (event, session) => {
         if (event === 'INITIAL_SESSION') {
           return;
-        }
-        if (__DEV__) {
-          const accessToken = session?.access_token;
-          // eslint-disable-next-line no-console
-          console.log('access token >>>', accessToken);
-          // eslint-disable-next-line no-console
-          console.log('[supabase] onAuthStateChange', {
-            event,
-            userId: session?.user?.id ?? null,
-            email: session?.user?.email ?? null,
-          });
         }
         if (!mounted) return;
 
@@ -155,30 +144,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         url.includes('auth-callback') ||
         url.includes('code=') ||
         url.includes('access_token');
-      if (__DEV__) {
-        try {
-          const parsed = new URL(url);
-          // eslint-disable-next-line no-console
-          console.log('[supabase] deeplink raw', url);
-          // eslint-disable-next-line no-console
-          console.log('[supabase] deeplink parsed', {
-            scheme: parsed.protocol,
-            host: parsed.host,
-            pathname: parsed.pathname,
-            search: parsed.search,
-            hash: parsed.hash,
-          });
-        } catch {
-          // eslint-disable-next-line no-console
-          console.log('[supabase] deeplink raw (unparsed)', url);
-        }
-      }
       if (!looksLikeOAuthReturn) {
         return;
-      }
-      if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.log('[supabase] received url', url.includes('code=') ? url.replace(/code=([^&]+)/, 'code=***') : url);
       }
       void (async () => {
         const result = await completeOAuthFromUrl(url);
@@ -189,18 +156,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const urlSub = Linking.addEventListener('url', ({ url }) => {
-      if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.log('[supabase] Linking event url', url);
-      }
       handleOAuthUrl(url);
     });
 
     void Linking.getInitialURL().then(url => {
-      if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.log('[supabase] Linking initialURL', url);
-      }
       if (url) {
         handleOAuthUrl(url);
       }

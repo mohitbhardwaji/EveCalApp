@@ -120,13 +120,7 @@ export function JournalNewEntryScreen() {
       if (cancelled) {
         return;
       }
-      if (__DEV__ && error) {
-        // eslint-disable-next-line no-console
-        console.log(
-          '[journal] mood_options detailed fetch failed, using fallback',
-          error,
-        );
-      }
+      void error;
       if (options.length === 0) {
         return;
       }
@@ -154,10 +148,7 @@ export function JournalNewEntryScreen() {
       if (cancelled) {
         return;
       }
-      if (__DEV__ && error) {
-        // eslint-disable-next-line no-console
-        console.log('[journal] tag_options fetch failed, using fallback', error);
-      }
+      void error;
       if (options.length === 0) {
         return;
       }

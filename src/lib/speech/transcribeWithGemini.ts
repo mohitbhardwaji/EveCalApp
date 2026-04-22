@@ -9,6 +9,8 @@ export type TranscribeResult =
 
 const MODEL = 'gemini-2.5-flash';
 const DEVANAGARI_REGEX = /[\u0900-\u097F]/;
+const MIN_AUDIO_BASE64_CHARS = 4000;
+const MIN_AUDIO_FILE_BYTES = 5000;
 
 function resolveGeminiApiKey(): string {
   const envKey = (GEMINI_API_KEY ?? '').trim();
@@ -85,7 +87,7 @@ async function transliterateToLatin(
 
 /** AAC/M4A from `react-native-audio-recorder-player` */
 function recordingMimeType(): string {
-  return Platform.OS === 'ios' ? 'audio/mp4' : 'audio/mp4';
+  return Platform.OS === 'ios' ? 'audio/m4a' : 'audio/m4a';
 }
 
 /**
@@ -105,6 +107,12 @@ async function fileUriToBase64(uri: string): Promise<string> {
   return RNFS.readFile(path, 'base64');
 }
 
+async function fileUriSize(uri: string): Promise<number> {
+  const path = pathForLocalAudioRead(uri);
+  const stat = await RNFS.stat(path);
+  return Number(stat.size) || 0;
+}
+
 type GeminiGenerateResponse = {
   candidates?: Array<{
     content?: { parts?: Array<{ text?: string }> };
@@ -122,6 +130,7 @@ Rules:
 - Do not merge with any prior context; treat this clip as a standalone utterance.
 - No timestamps, labels, quotes, or meta text—only the transcribed words.
 - If the clip contains only silence or unintelligible noise, respond with an empty string (no words).
+- If you are uncertain about words, do not guess. Return an empty string.
 - Otherwise transcribe continuously: include filler (um, uh) when they sound like part of natural speech; omit them only when they are clearly isolated low-confidence noise and there is no other speech.
 
 Reply with ONLY the transcript text, or nothing if there is no speech.`;
@@ -143,13 +152,22 @@ export async function transcribeAudioWithGemini(
   }
 
   let base64: string;
+  let sizeBytes = 0;
   try {
+    sizeBytes = await fileUriSize(filePath);
     base64 = await fileUriToBase64(filePath);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return {
       ok: false,
       message: `Could not read the recording: ${msg}`,
+    };
+  }
+
+  if (sizeBytes < MIN_AUDIO_FILE_BYTES || base64.length < MIN_AUDIO_BASE64_CHARS) {
+    return {
+      ok: false,
+      message: 'No speech detected. Try speaking a bit longer and closer to the mic.',
     };
   }
 
@@ -206,7 +224,9 @@ export async function transcribeCaptureSegmentWithGemini(
   }
 
   let base64: string;
+  let sizeBytes = 0;
   try {
+    sizeBytes = await fileUriSize(filePath);
     base64 = await fileUriToBase64(filePath);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -214,6 +234,10 @@ export async function transcribeCaptureSegmentWithGemini(
       ok: false,
       message: `Could not read the recording: ${msg}`,
     };
+  }
+
+  if (sizeBytes < MIN_AUDIO_FILE_BYTES || base64.length < MIN_AUDIO_BASE64_CHARS) {
+    return { ok: true, text: '' };
   }
 
   try {

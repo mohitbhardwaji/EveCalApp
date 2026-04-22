@@ -49,12 +49,6 @@ export async function fetchAuthUserWithProfile(): Promise<{
 }> {
   const supabase = getSupabase();
   const getUserRes = await supabase.auth.getUser();
-  if (__DEV__) {
-    // eslint-disable-next-line no-console
-    console.log('[supabase] fetchAuthUserWithProfile auth.getUser() data', getUserRes.data);
-    // eslint-disable-next-line no-console
-    console.log('[supabase] fetchAuthUserWithProfile auth.getUser() error', getUserRes.error ?? null);
-  }
   const user = getUserRes.data.user;
   if (!user) {
     return { user: null, userData: null };
@@ -64,12 +58,6 @@ export async function fetchAuthUserWithProfile(): Promise<{
     .select('*')
     .eq('id', user.id)
     .single();
-  if (__DEV__) {
-    // eslint-disable-next-line no-console
-    console.log('[supabase] fetchAuthUserWithProfile users data', usersRes.data);
-    // eslint-disable-next-line no-console
-    console.log('[supabase] fetchAuthUserWithProfile users error', usersRes.error ?? null);
-  }
   return {
     user,
     userData: (usersRes.data as UserData | null) ?? null,
@@ -85,14 +73,6 @@ type OAuthProvider = 'google' | 'apple';
 
 export async function startOAuthSignIn(provider: OAuthProvider) {
   const supabase = getSupabase();
-  if (__DEV__) {
-    // Avoid logging tokens; this is just flow diagnostics.
-    // eslint-disable-next-line no-console
-    console.log('[supabase] startOAuthSignIn', {
-      provider,
-      redirectTo: SUPABASE_OAUTH_REDIRECT_URL,
-    });
-  }
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
     options: {
@@ -101,18 +81,10 @@ export async function startOAuthSignIn(provider: OAuthProvider) {
     },
   });
   if (error) {
-    if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.log('[supabase] signInWithOAuth error', error.message);
-    }
     return { ok: false as const, message: error.message };
   }
   if (!data.url) {
     return { ok: false as const, message: 'No OAuth URL returned' };
-  }
-  if (__DEV__) {
-    // eslint-disable-next-line no-console
-    console.log('[supabase] OAuth URL', data.url);
   }
   // Android package-visibility rules can make `canOpenURL()` return false even
   // though opening works. Always try `openURL`, and only fail if that throws.
@@ -133,29 +105,14 @@ export async function completeOAuthFromUrl(url: string) {
   const logCurrentUser = async () => {
     const {
       data: { user },
-      error,
+      error: _error,
     } = await supabase.auth.getUser();
-    if (__DEV__) {
-      if (error) {
-        // eslint-disable-next-line no-console
-        console.log('[supabase] getUser error', error.message);
-      } else {
-        // eslint-disable-next-line no-console
-        console.log('[supabase] getUser', user);
-      }
-    }
+    void user;
+    void _error;
   };
 
   try {
     const parsed = new URL(url);
-    if (__DEV__) {
-      // Strip sensitive pieces before logging.
-      const safe = `${parsed.origin}${parsed.pathname}${
-        parsed.searchParams.get('code') ? '?code=***' : parsed.search
-      }${parsed.hash ? '#***' : ''}`;
-      // eslint-disable-next-line no-console
-      console.log('[supabase] completeOAuthFromUrl', safe);
-    }
     // Supabase PKCE typically returns `?code=...`, but depending on provider/flow it can also show up in the hash.
     const codeFromQuery = parsed.searchParams.get('code');
     const hash = parsed.hash.replace(/^#/, '');
@@ -165,22 +122,9 @@ export async function completeOAuthFromUrl(url: string) {
     if (code) {
       const { data, error } = await supabase.auth.exchangeCodeForSession(code);
       if (error) {
-        if (__DEV__) {
-          // eslint-disable-next-line no-console
-          console.log('[supabase] exchangeCodeForSession error', error.message);
-        }
         return { ok: false as const, message: error.message };
       }
-      if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.log('[supabase] exchangeCodeForSession ok', {
-          hasSession: Boolean(data.session),
-          userId: data.user?.id ?? null,
-          email: data.user?.email ?? null,
-          provider: data.user?.app_metadata?.provider ?? null,
-          expiresAt: data.session?.expires_at ?? null,
-        });
-      }
+      void data;
       await logCurrentUser();
       return { ok: true as const, message: null };
     }
@@ -194,22 +138,9 @@ export async function completeOAuthFromUrl(url: string) {
           refresh_token,
         });
         if (error) {
-          if (__DEV__) {
-            // eslint-disable-next-line no-console
-            console.log('[supabase] setSession error', error.message);
-          }
           return { ok: false as const, message: error.message };
         }
-        if (__DEV__) {
-          // eslint-disable-next-line no-console
-          console.log('[supabase] setSession ok', {
-            hasSession: Boolean(data.session),
-            userId: data.user?.id ?? null,
-            email: data.user?.email ?? null,
-            provider: data.user?.app_metadata?.provider ?? null,
-            expiresAt: data.session?.expires_at ?? null,
-          });
-        }
+        void data;
         await logCurrentUser();
         return { ok: true as const, message: null };
       }

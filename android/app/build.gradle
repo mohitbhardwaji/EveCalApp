@@ -30,7 +30,7 @@ def readEnvValue(String key, String fallback = "") {
     return fallback
 }
 
-def oneSignalAppIdFromEnv = readEnvValue("ONESIGNAL_APP_ID", "")
+def oneSignalAppIdFromEnv = readEnvValue("ONESIGNAL_APP_ID", "46aa1df3-ab86-400d-a1cb-c428e92cf0d4")
 def firebaseAndroidApiKeyFromEnv = readEnvValue("FIREBASE_ANDROID_API_KEY", "")
 
 def googleServicesJson = file("${project.projectDir}/google-services.json")

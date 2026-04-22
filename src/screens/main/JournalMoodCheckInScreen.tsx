@@ -37,10 +37,7 @@ export function JournalMoodCheckInScreen() {
       if (cancelled) {
         return;
       }
-      if (__DEV__ && error) {
-        // eslint-disable-next-line no-console
-        console.log('[journal] tag_options fetch failed, using fallback', error);
-      }
+      void error;
       const source = tags.length > 0 ? tags : FALLBACK_TAG_OPTIONS;
       const next = mapTagOptionsToAnchorMoodOptions(source);
       setMoodOptions(next);

@@ -1,5 +1,5 @@
-import { Platform } from 'react-native';
-import OneSignal from 'react-native-onesignal';
+import { PermissionsAndroid, Platform } from 'react-native';
+import { OneSignal, LogLevel } from 'react-native-onesignal';
 import { ONESIGNAL_APP_ID } from '../config/onesignal';
 import { registerUserDevicePushToken } from '../lib/supabase/userDevicesApi';
 import { navigateFromNotificationData } from '../navigation/rootNavigationRef';
@@ -30,25 +30,32 @@ function additionalDataToPlainRecord(
 class OneSignalService {
   private bootstrapped = false;
   private lastSavedToken: string | null = null;
+  private lastSyncedUserId: string | null = null;
 
   async bootstrap(): Promise<void> {
     if (this.bootstrapped) {
       return;
     }
-    this.bootstrapped = true;
-
-    OneSignal.initialize(ONESIGNAL_APP_ID);
-
-    // iOS requires prompting; Android auto-grants on < 13 and prompts on 13+.
-    // We ask on both to keep behavior consistent.
-    try {
-      await OneSignal.Notifications.requestPermission(true);
-    } catch (e) {
+    const appId = ONESIGNAL_APP_ID.trim();
+    if (!appId || appId === 'YOUR_ONESIGNAL_APP_ID') {
       if (__DEV__) {
         // eslint-disable-next-line no-console
-        console.log('[OneSignal] requestPermission error', e);
+        console.log('[OneSignal] app id missing');
       }
+      return;
     }
+    this.bootstrapped = true;
+
+    if (__DEV__) {
+      OneSignal.Debug.setLogLevel(LogLevel.Verbose);
+    } else {
+      OneSignal.Debug.setLogLevel(LogLevel.Warn);
+    }
+
+    OneSignal.initialize(appId);
+    OneSignal.User.pushSubscription.optIn();
+
+    await this.requestSystemNotificationPermission();
 
     // Tap handling -> keep existing deep-link navigation format.
     OneSignal.Notifications.addEventListener('click', event => {
@@ -81,8 +88,70 @@ class OneSignalService {
     });
 
     if (__DEV__) {
+      const token = await OneSignal.User.pushSubscription.getTokenAsync();
       // eslint-disable-next-line no-console
-      console.log('[OneSignal] bootstrapped', { platform: Platform.OS });
+      console.log('[OneSignal] bootstrapped', {
+        platform: Platform.OS,
+        appId,
+        canRequestPermission: OneSignal.Notifications.canRequestPermission,
+        permission: OneSignal.Notifications.permission,
+        optedIn: OneSignal.User.pushSubscription.optedIn,
+        tokenPresent: Boolean(token),
+      });
+    }
+  }
+
+  async requestSystemNotificationPermission(): Promise<void> {
+    try {
+      if (Platform.OS === 'android' && Number(Platform.Version) >= 33) {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+        );
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.log('[OneSignal] android notification permission', { granted });
+        }
+      }
+    } catch (e) {
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.log('[OneSignal] android permission request error', e);
+      }
+    }
+
+    try {
+      if (OneSignal.Notifications.canRequestPermission) {
+        await OneSignal.Notifications.requestPermission(true);
+      }
+    } catch (e) {
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.log('[OneSignal] requestPermission error', e);
+      }
+    }
+  }
+
+  syncUser(userId: string | null | undefined): void {
+    const appId = ONESIGNAL_APP_ID.trim();
+    if (!appId || appId === 'YOUR_ONESIGNAL_APP_ID') {
+      return;
+    }
+    const next = userId?.trim() ?? null;
+    if (this.lastSyncedUserId === next) {
+      return;
+    }
+    this.lastSyncedUserId = next;
+    try {
+      if (next) {
+        OneSignal.login(next);
+      } else {
+        OneSignal.logout();
+      }
+    } catch (e) {
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.log('[OneSignal] syncUser error', e);
+      }
     }
   }
 

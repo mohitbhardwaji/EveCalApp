@@ -133,10 +133,6 @@ export async function fetchAnchorMoodForSlotFromApi(
     .maybeSingle();
 
   if (error) {
-    if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.log('[journal] fetch anchor mood', error.message);
-    }
     return { label: null, fetchFailed: true };
   }
 
