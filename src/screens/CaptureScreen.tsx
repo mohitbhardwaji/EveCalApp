@@ -12,6 +12,7 @@ import { TopHeader } from '../components/TopHeader';
 import { MicAnimation } from '../components/MicAnimation';
 import { TranscriptList } from '../components/TranscriptList';
 import { useVoiceCapture } from '../hooks/useVoiceCapture';
+import { useAuth } from '../state/auth/AuthContext';
 import { EveCalTheme } from '../theme/theme';
 
 function statusText(params: {
@@ -28,11 +29,39 @@ function statusText(params: {
   if (params.isListening) {
     return 'Listening...';
   }
-  return 'Tap Start Capture';
+  return 'Tap mic to start';
+}
+
+function timeGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) {
+    return 'Good Morning';
+  }
+  if (hour < 18) {
+    return 'Good Afternoon';
+  }
+  return 'Good Evening';
+}
+
+function firstNameFromAuth(userData: Record<string, unknown> | null): string {
+  if (!userData) {
+    return 'Eve';
+  }
+  const fullName = userData.full_name;
+  if (typeof fullName === 'string' && fullName.trim()) {
+    return fullName.trim().split(/\s+/)[0] ?? 'Eve';
+  }
+  const name = userData.name;
+  if (typeof name === 'string' && name.trim()) {
+    return name.trim().split(/\s+/)[0] ?? 'Eve';
+  }
+  return 'Eve';
 }
 
 export function CaptureScreen() {
   const insets = useSafeAreaInsets();
+  const [clockTick, setClockTick] = React.useState(() => Date.now());
+  const { userData } = useAuth();
   const {
     isActive,
     isListening,
@@ -45,6 +74,18 @@ export function CaptureScreen() {
     stop,
   } = useVoiceCapture();
 
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setClockTick(Date.now());
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const visibleTranscripts = React.useMemo(
+    () => transcriptList.filter(item => clockTick - item.timestamp <= 60_000),
+    [clockTick, transcriptList],
+  );
+
   const palette = {
     background: EveCalTheme.colors.bg,
     card: EveCalTheme.colors.cardWarm,
@@ -53,36 +94,34 @@ export function CaptureScreen() {
     primary: EveCalTheme.colors.accent2,
   };
 
+  const greeting = `${timeGreeting()}, ${firstNameFromAuth(
+    (userData as Record<string, unknown> | null) ?? null,
+  )}`;
+
+  const onMicPress = React.useCallback(() => {
+    if (isActive) {
+      void stop();
+      return;
+    }
+    void start();
+  }, [isActive, start, stop]);
+
   return (
     <View style={[styles.root, { backgroundColor: palette.background }]}>
       <TopHeader />
       <View style={styles.container}>
-        <Text style={[styles.title, { color: palette.text }]}>Live Capture</Text>
+        <Text style={[styles.title, { color: palette.text }]}>{greeting}</Text>
         <View style={styles.centerSection}>
-          <MicAnimation isSpeaking={isSpeaking} color={palette.primary} />
+          <Pressable
+            onPress={onMicPress}
+            accessibilityRole="button"
+            accessibilityLabel={isActive ? 'Stop capture' : 'Start capture'}
+            style={({ pressed }) => [pressed && styles.micPressed]}>
+            <MicAnimation isSpeaking={isSpeaking} color={palette.primary} />
+          </Pressable>
           <Text style={[styles.status, { color: palette.text }]}>
             {statusText({ isListening, isSpeaking, isProcessing })}
           </Text>
-          {!isActive ? (
-            <Pressable
-              onPress={() => void start()}
-              style={({ pressed }) => [
-                styles.startButton,
-                { backgroundColor: palette.primary },
-                pressed && styles.buttonPressed,
-              ]}>
-              <Text style={styles.buttonText}>Start Capture</Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={() => void stop()}
-              style={({ pressed }) => [
-                styles.endButton,
-                pressed && styles.buttonPressed,
-              ]}>
-              <Text style={styles.buttonText}>End Capture Session</Text>
-            </Pressable>
-          )}
           {isProcessing ? (
             <ActivityIndicator
               size="small"
@@ -104,10 +143,7 @@ export function CaptureScreen() {
               marginBottom: Math.max(10, insets.bottom + 4),
             },
           ]}>
-          <Text style={[styles.feedTitle, { color: palette.text }]}>
-            Live Transcript
-          </Text>
-          <TranscriptList items={transcriptList} />
+          <TranscriptList items={visibleTranscripts} />
         </View>
       </View>
     </View>
@@ -121,7 +157,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 24,
   },
   title: {
     fontSize: 30,
@@ -130,33 +166,15 @@ const styles = StyleSheet.create({
   },
   centerSection: {
     alignItems: 'center',
-    marginTop: Platform.OS === 'ios' ? 14 : 8,
-    marginBottom: 20,
+    marginTop: Platform.OS === 'ios' ? 28 : 20,
+    marginBottom: 24,
   },
   status: {
     marginTop: 8,
     fontSize: 18,
     fontWeight: '700',
   },
-  startButton: {
-    marginTop: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 999,
-  },
-  endButton: {
-    marginTop: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 999,
-    backgroundColor: '#cf4e4e',
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  buttonPressed: {
+  micPressed: {
     opacity: 0.86,
   },
   loader: {
@@ -173,13 +191,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   feedCard: {
-    flex: 1,
+    minHeight: 190,
     borderRadius: 20,
-    padding: 14,
-  },
-  feedTitle: {
-    fontSize: 18,
-    marginBottom: 12,
-    fontWeight: '600',
+    paddingVertical: 14,
   },
 });

@@ -1,6 +1,5 @@
 import { transcribeCaptureSegmentWithGemini } from '../lib/speech/transcribeWithGemini';
 import { classifyTaskText } from '../lib/tasks/classifyTask';
-import { evaluateCaptureTaskIntent } from '../lib/tasks/evaluateCaptureTaskIntent';
 
 type AnalyzeTaskResponse = {
   isTask: boolean;
@@ -18,11 +17,21 @@ export async function transcribeAudio(filePath: string): Promise<string> {
 export async function analyzeAndCreateTask(
   text: string,
 ): Promise<AnalyzeTaskResponse> {
-  const decision = await evaluateCaptureTaskIntent(text);
-  if (!decision.isTask) {
+  const trimmed = text.trim();
+  if (!trimmed) {
     return { isTask: false };
   }
-  const created = await classifyTaskText(text, { captureTask: decision.payload });
+  const title = trimmed
+    .replace(/\s+/g, ' ')
+    .slice(0, 80)
+    .trim();
+  const created = await classifyTaskText(trimmed, {
+    captureTask: {
+      title: title || 'Voice task',
+      description: trimmed,
+      createdAt: new Date().toISOString(),
+    },
+  });
   if (!created.ok) {
     throw new Error(created.message);
   }

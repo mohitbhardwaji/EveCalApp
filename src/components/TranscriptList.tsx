@@ -27,7 +27,8 @@ export function TranscriptList({ items }: Props) {
   return (
     <ScrollView
       ref={scrollRef}
-      showsVerticalScrollIndicator={false}
+      horizontal
+      showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.content}>
       {items
         .slice()
@@ -63,10 +64,11 @@ const styles = StyleSheet.create({
     color: EveCalTheme.colors.textMuted,
   },
   content: {
-    gap: 10,
-    paddingBottom: 20,
+    gap: 12,
+    paddingRight: 8,
   },
   card: {
+    width: 300,
     borderRadius: 16,
     padding: 12,
     backgroundColor: 'rgba(255,255,255,0.84)',
