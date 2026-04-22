@@ -1,12 +1,5 @@
 import React from 'react';
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TopHeader } from '../components/TopHeader';
 import { MicAnimation } from '../components/MicAnimation';
@@ -14,23 +7,6 @@ import { TranscriptList } from '../components/TranscriptList';
 import { useVoiceCapture } from '../hooks/useVoiceCapture';
 import { useAuth } from '../state/auth/AuthContext';
 import { EveCalTheme } from '../theme/theme';
-
-function statusText(params: {
-  isListening: boolean;
-  isSpeaking: boolean;
-  isProcessing: boolean;
-}): string {
-  if (params.isProcessing) {
-    return 'Processing...';
-  }
-  if (params.isSpeaking) {
-    return 'Speaking...';
-  }
-  if (params.isListening) {
-    return 'Listening...';
-  }
-  return 'Tap mic to start';
-}
 
 function timeGreeting(): string {
   const hour = new Date().getHours();
@@ -91,12 +67,21 @@ export function CaptureScreen() {
     card: EveCalTheme.colors.cardWarm,
     text: EveCalTheme.colors.text,
     muted: EveCalTheme.colors.textMuted,
-    primary: EveCalTheme.colors.accent2,
+    primary: '#8A7468',
   };
 
   const greeting = `${timeGreeting()}, ${firstNameFromAuth(
     (userData as Record<string, unknown> | null) ?? null,
   )}`;
+  const dynamicGreetingSize = React.useMemo(() => {
+    if (greeting.length > 28) {
+      return 27;
+    }
+    if (greeting.length > 22) {
+      return 29;
+    }
+    return 32;
+  }, [greeting]);
 
   const onMicPress = React.useCallback(() => {
     if (isActive) {
@@ -110,18 +95,48 @@ export function CaptureScreen() {
     <View style={[styles.root, { backgroundColor: palette.background }]}>
       <TopHeader />
       <View style={styles.container}>
-        <Text style={[styles.title, { color: palette.text }]}>{greeting}</Text>
-        <View style={styles.centerSection}>
+        {visibleTranscripts.length > 0 ? (
+          <View
+            style={[
+              styles.feedCard,
+              {
+                backgroundColor: palette.card,
+              },
+            ]}>
+            <TranscriptList items={visibleTranscripts} />
+          </View>
+        ) : null}
+
+        <View
+          style={[
+            styles.centerSection,
+            { marginBottom: Math.max(10, insets.bottom + 4) },
+          ]}>
+          <Text
+            style={[
+              styles.title,
+              {
+                color: palette.text,
+                fontSize: dynamicGreetingSize,
+                lineHeight: dynamicGreetingSize + 4,
+              },
+            ]}>
+            {greeting}
+          </Text>
+          <Text style={[styles.subtitle, { color: palette.muted }]}>
+            Release what's on your mind
+          </Text>
           <Pressable
             onPress={onMicPress}
             accessibilityRole="button"
             accessibilityLabel={isActive ? 'Stop capture' : 'Start capture'}
             style={({ pressed }) => [pressed && styles.micPressed]}>
-            <MicAnimation isSpeaking={isSpeaking} color={palette.primary} />
+            <MicAnimation
+              isSpeaking={isSpeaking}
+              isPulsing={isSpeaking || isProcessing}
+              color={palette.primary}
+            />
           </Pressable>
-          <Text style={[styles.status, { color: palette.text }]}>
-            {statusText({ isListening, isSpeaking, isProcessing })}
-          </Text>
           {isProcessing ? (
             <ActivityIndicator
               size="small"
@@ -129,21 +144,10 @@ export function CaptureScreen() {
               style={styles.loader}
             />
           ) : null}
-          <Text style={[styles.subStatus, { color: palette.muted }]}>
-            {currentChunk || 'Speak naturally. We auto-transcribe after each pause.'}
-          </Text>
+          {!isActive ? (
+            <Text style={[styles.tapHint, { color: palette.muted }]}>Tap to speak</Text>
+          ) : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
-        </View>
-
-        <View
-          style={[
-            styles.feedCard,
-            {
-              backgroundColor: palette.card,
-              marginBottom: Math.max(10, insets.bottom + 4),
-            },
-          ]}>
-          <TranscriptList items={visibleTranscripts} />
         </View>
       </View>
     </View>
@@ -157,22 +161,29 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingTop: 24,
+    paddingTop: 10,
   },
   title: {
-    fontSize: 30,
+    fontSize: 32,
+    lineHeight: 36,
     textAlign: 'center',
-    fontFamily: EveCalTheme.typography.serif,
+    fontFamily: 'Georgia',
+    letterSpacing: 0.2,
+    color: '#5C4A3D',
+    fontWeight: '300',
   },
-  centerSection: {
-    alignItems: 'center',
-    marginTop: Platform.OS === 'ios' ? 28 : 20,
-    marginBottom: 24,
-  },
-  status: {
+  subtitle: {
     marginTop: 8,
     fontSize: 18,
-    fontWeight: '700',
+    fontFamily: EveCalTheme.typography.system,
+    opacity: 0.75,
+    lineHeight: 24,
+  },
+  centerSection: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingBottom: Platform.OS === 'ios' ? 30 : 22,
   },
   micPressed: {
     opacity: 0.86,
@@ -180,19 +191,21 @@ const styles = StyleSheet.create({
   loader: {
     marginTop: 10,
   },
-  subStatus: {
-    marginTop: 8,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
   error: {
     marginTop: 8,
     color: '#b74b4b',
     textAlign: 'center',
   },
+  tapHint: {
+    marginTop: 18,
+    fontSize: 16,
+    fontFamily: EveCalTheme.typography.system,
+    opacity: 0.62,
+  },
   feedCard: {
-    minHeight: 190,
-    borderRadius: 20,
-    paddingVertical: 14,
+    minHeight: 170,
+    borderRadius: 18,
+    paddingVertical: 10,
+    marginTop: 4,
   },
 });

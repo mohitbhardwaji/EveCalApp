@@ -4,15 +4,17 @@ import Feather from 'react-native-vector-icons/Feather';
 
 type Props = {
   isSpeaking: boolean;
+  isPulsing?: boolean;
   color: string;
 };
 
-export function MicAnimation({ isSpeaking, color }: Props) {
+export function MicAnimation({ isSpeaking, isPulsing, color }: Props) {
+  const pulseOn = isPulsing ?? isSpeaking;
   const pulse = React.useRef(new Animated.Value(0)).current;
   const breathe = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
-    if (!isSpeaking) {
+    if (!pulseOn) {
       pulse.stopAnimation();
       breathe.stopAnimation();
       pulse.setValue(0);
@@ -54,7 +56,7 @@ export function MicAnimation({ isSpeaking, color }: Props) {
       pulseLoop.stop();
       breathLoop.stop();
     };
-  }, [breathe, isSpeaking, pulse]);
+  }, [breathe, pulse, pulseOn]);
 
   const ringScale = pulse.interpolate({
     inputRange: [0, 1],
@@ -68,7 +70,7 @@ export function MicAnimation({ isSpeaking, color }: Props) {
 
   return (
     <View style={styles.stage}>
-      {isSpeaking ? (
+      {pulseOn ? (
         <Animated.View
           pointerEvents="none"
           style={[
@@ -82,8 +84,8 @@ export function MicAnimation({ isSpeaking, color }: Props) {
         />
       ) : null}
       <Animated.View style={{ transform: [{ scale: breathe }] }}>
-        <View style={[styles.micCircle, { borderColor: color }]}>
-          <Feather name="mic" size={34} color={color} />
+        <View style={[styles.micCircle, { borderColor: 'rgba(58,45,42,0.06)' }]}>
+          <Feather name="mic" size={52} color={color} />
         </View>
       </Animated.View>
     </View>
@@ -92,25 +94,30 @@ export function MicAnimation({ isSpeaking, color }: Props) {
 
 const styles = StyleSheet.create({
   stage: {
-    width: 170,
-    height: 170,
+    width: 220,
+    height: 220,
     alignItems: 'center',
     justifyContent: 'center',
   },
   ring: {
     position: 'absolute',
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 132,
+    height: 132,
+    borderRadius: 66,
     borderWidth: 4,
   },
   micCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    borderWidth: 2,
+    width: 146,
+    height: 146,
+    borderRadius: 73,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    elevation: 6,
   },
 });
