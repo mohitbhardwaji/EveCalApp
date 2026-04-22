@@ -22,6 +22,13 @@ export type TranscriptItem = {
   error?: string;
 };
 
+type PendingSegment = {
+  segmentId: string;
+  rawPath: string;
+  durationMs: number;
+  snapshotPathFromFinalize?: string;
+};
+
 /** Listening mode: crossing this starts a speech segment. */
 const SPEECH_ONSET_DB = -38;
 /** Speaking mode: only stronger speech updates lastSpeechAt (prevents noise from blocking pause detection). */
@@ -69,6 +76,7 @@ export function useVoiceCapture() {
   const segmentIdRef = React.useRef<string | null>(null);
   const segmentDurationRef = React.useRef(0);
   const processingRef = React.useRef(false);
+  const pendingSegmentsRef = React.useRef<PendingSegment[]>([]);
   const lastSpeechAtRef = React.useRef(0);
 
   React.useEffect(() => {
@@ -132,10 +140,6 @@ export function useVoiceCapture() {
       durationMs: number,
       snapshotPathFromFinalize?: string,
     ) => {
-      if (processingRef.current) {
-        captureLog('process.skip.already-processing', { segmentId });
-        return;
-      }
       processingRef.current = true;
       captureLog('process.begin', { segmentId, durationMs });
       setIfMounted(() => {
@@ -217,6 +221,32 @@ export function useVoiceCapture() {
       }
     },
     [mergeTranscriptChunk, setIfMounted],
+  );
+
+  const drainPendingSegments = React.useCallback(async () => {
+    if (processingRef.current) {
+      return;
+    }
+    while (pendingSegmentsRef.current.length > 0) {
+      const next = pendingSegmentsRef.current.shift();
+      if (!next) {
+        break;
+      }
+      await processSegment(
+        next.segmentId,
+        next.rawPath,
+        next.durationMs,
+        next.snapshotPathFromFinalize,
+      );
+    }
+  }, [processSegment]);
+
+  const enqueueSegmentProcessing = React.useCallback(
+    (segment: PendingSegment) => {
+      pendingSegmentsRef.current.push(segment);
+      void drainPendingSegments();
+    },
+    [drainPendingSegments],
   );
 
   const transitionToSpeaking = React.useCallback(async () => {
@@ -311,12 +341,12 @@ export function useVoiceCapture() {
       }
       if (segmentId && rawPath) {
         captureLog('segment.finalize.process-queued', { segmentId, duration });
-        await processSegment(
+        enqueueSegmentProcessing({
           segmentId,
           rawPath,
-          duration,
-          snapshotPath ?? undefined,
-        );
+          durationMs: duration,
+          snapshotPathFromFinalize: snapshotPath ?? undefined,
+        });
       } else {
         captureLog('segment.finalize.no-audio', { segmentId });
       }
@@ -326,7 +356,7 @@ export function useVoiceCapture() {
     } finally {
       flushRef.current = false;
     }
-  }, [processSegment, setIfMounted, startListenRecorder]);
+  }, [enqueueSegmentProcessing, setIfMounted, startListenRecorder]);
 
   const handleRecordBack = React.useCallback(
     async (event: RecordBackType) => {
@@ -416,16 +446,17 @@ export function useVoiceCapture() {
           duration: stopDuration,
           snapshotReady: Boolean(snapshotPath),
         });
-        await processSegment(
-          stopSegmentId,
+        enqueueSegmentProcessing({
+          segmentId: stopSegmentId,
           rawPath,
-          stopDuration,
-          snapshotPath ?? undefined,
-        );
+          durationMs: stopDuration,
+          snapshotPathFromFinalize: snapshotPath ?? undefined,
+        });
       }
     } catch {
       // ignore
     }
+    await drainPendingSegments();
     phaseRef.current = 'listening';
     segmentIdRef.current = null;
     speakingStreakRef.current = 0;
@@ -437,7 +468,7 @@ export function useVoiceCapture() {
     });
     await unlinkListenScratch();
     captureLog('session.stop.done');
-  }, [processSegment, setIfMounted]);
+  }, [drainPendingSegments, enqueueSegmentProcessing, setIfMounted]);
 
   const start = React.useCallback(async () => {
     if (activeRef.current) {
